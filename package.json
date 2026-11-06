@@ -1,0 +1,14 @@
+{
+  "name": "natural-language-report-service",
+  "version": "0.3.0",
+  "description": "Turns a SHACL report spec into SPARQL queries, joins the results and writes a CSV. The LLM writes specs; this service runs them.",
+  "license": "MIT",
+  "type": "module",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "n3": "^1.17.0"
+  }
+}
