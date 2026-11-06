@@ -1,4 +1,4 @@
-# natural-language-report-service
+# report-assistant-service
 
 A chat assistant. The user asks for a report in Dutch and gets a CSV.
 
@@ -17,8 +17,8 @@ Work in progress, POC phase. Scheduled reports stay in
 Add the service to your `docker-compose.yml`:
 
 ```yml
-natural-language-report:
-  image: lblod/natural-language-report-service
+report-assistant:
+  image: lblod/report-assistant-service
   volumes:
     - ./data/files:/share
     - ./config/report-profiles:/config/profiles
@@ -32,7 +32,7 @@ Route the chat to it in `config/dispatcher/dispatcher.ex`:
 
 ```elixir
 match "/assistant/*path" do
-  forward conn, path, "http://natural-language-report/assistant/"
+  forward conn, path, "http://report-assistant/assistant/"
 end
 ```
 
@@ -71,14 +71,14 @@ needs to:
 There is one exception. While the LLM writes a spec, it reads code lists and
 the names of linked entities (a bestuurseenheid, a persoon) to suggest filter
 values. These reads do not run as the user. They run with the scope of the
-service, `http://services.semantic.works/natural-language-report`
+service, `http://services.semantic.works/report-assistant`
 (`SERVICE_SCOPE`). Grant that scope read access to the graph with the code
 lists and the names. If the scope can not read a code list or an entity, the
 LLM sees it as "(not readable)" and filters on the name text instead. With
 sparql-parser:
 
 ```lisp
-(with-scope "http://services.semantic.works/natural-language-report"
+(with-scope "http://services.semantic.works/report-assistant"
   (grant (read)
     :to-graph public
     :for-allowed-group "public"))
@@ -92,7 +92,7 @@ in every graph the user may write to that accepts those types. If you want
 them in one graph, set `WRITE_SCOPE`. Example, one graph per user:
 
 ```lisp
-(with-scope "http://services.semantic.works/natural-language-report/chat"
+(with-scope "http://services.semantic.works/report-assistant/chat"
   (grant (read write)
     :to-graph chat
     :for-allowed-group "report-assistant-user"))
@@ -152,7 +152,7 @@ We add a small profile and run one report on it.
 2. Restart the service. It reads the profiles at boot.
 
    ```sh
-   docker compose restart natural-language-report
+   docker compose restart report-assistant
    ```
 
    The log shows `[profile] "Besturen" (besturen.ttl): 2 entities, 3 fields`.
@@ -214,7 +214,7 @@ lists and the names it looks up for a filter.
 | `LLM_API_KEY` | | bearer token. Not needed for a local Ollama. |
 | `PROFILE_DIR` | `/config/profiles` | folder with the profiles, one `.ttl` file each |
 | `SHARE_DIR` | `/share` | where CSVs and specs are written |
-| `SERVICE_SCOPE` | `http://services.semantic.works/natural-language-report` | scope of the reads of the LLM: code lists and names of linked entities |
+| `SERVICE_SCOPE` | `http://services.semantic.works/report-assistant` | scope of the reads of the LLM: code lists and names of linked entities |
 | `WRITE_SCOPE` | | scope of every write (messages, reports, files) and of the conversation delete. If not set, no scope is sent. |
 | `CHAT_ASSISTANT_URI` | `http://data.lblod.info/id/chat-agents/report-assistant` | agent that signs the answers and is the source (`prov:wasAttributedTo`) of every spec and report |
 | `CSV_SEPARATOR` | `;` | CSV column separator |

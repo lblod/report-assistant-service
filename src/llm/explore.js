@@ -7,7 +7,7 @@
 import { query, sparqlEscapeString } from 'mu';
 
 // Must match the with-scope grant in the app's config.lisp.
-const SERVICE_SCOPE = process.env.SERVICE_SCOPE || 'http://services.semantic.works/natural-language-report';
+const SERVICE_SCOPE = process.env.SERVICE_SCOPE || 'http://services.semantic.works/report-assistant';
 const INLINE_VALUES_MAX = Number(process.env.INLINE_VALUES_MAX || 50);
 const LOOKUP_LIMIT = 25;
 
