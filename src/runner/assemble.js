@@ -85,9 +85,14 @@ function buildRowsAt(branch, found, tree, columns) {
   let rows = [new Map(branch.ends.map(i => [i, found.term.value]))];
   for (const next of branch.next.values()) {
     const nodes = [...(found.below.get(next)?.values() || [])];
-    const below = next.columns.every(i => FOLDING.includes(columns[i].collect))
-      ? [fold(next, nodes, tree, columns)]
-      : nodes.length ? nodes.flatMap(node => buildRowsAt(next, node, tree, columns)) : [new Map()];
+    let below;
+    if (next.columns.every(i => FOLDING.includes(columns[i].collect))) {
+      below = [fold(next, nodes, tree, columns)];
+    } else if (nodes.length) {
+      below = nodes.flatMap(node => buildRowsAt(next, node, tree, columns));
+    } else {
+      below = [new Map()];
+    }
     rows = rows.flatMap(row => below.map(cells => new Map([...row, ...cells])));
   }
   return rows;
@@ -104,7 +109,7 @@ function fold(branch, nodes, tree, columns) {
     const col = columns[i];
     cells.set(i, col.collect === SH + 'groupConcat'
       ? unique.map(t => t.value).join(col.separator ?? ',')
-      : pickExtreme(unique, col, col.collect === SH + 'min' ? -1 : 1));
+      : pickExtreme(unique, col, col.collect === SH + 'min' ? 'min' : 'max'));
   }
   return cells;
 }
@@ -121,15 +126,18 @@ function collectTermsBelow(node, rest) {
 // xsd:date and xsd:dateTime are ISO strings, so text order is date order.
 // Numbers mixed with other values throw: check.js should have caught it,
 // and a silently wrong cell is worse than a failed job. The terms are SPARQL
-// JSON bindings, so the datatype is a plain string.
-function pickExtreme(terms, col, direction) {
+// JSON bindings, so the datatype is a plain string. mode is 'min' or 'max'.
+function pickExtreme(terms, col, mode) {
   if (!terms.length) return '';
   const numbers = terms.filter(t => NUMERIC_DATATYPES.has(t.datatype)).length;
   if (numbers && numbers < terms.length) {
-    throw new Error(`column "${col.label}" asks for sh:${direction < 0 ? 'min' : 'max'} but mixes numbers with other values.`);
+    throw new Error(`column "${col.label}" asks for sh:${mode} but mixes numbers with other values.`);
   }
   const key = numbers ? t => Number(t.value) : t => t.value;
-  const cmp = (a, b) => a < b ? -1 : a > b ? 1 : 0;
-  const best = terms.reduce((a, b) => (cmp(key(b), key(a)) * direction > 0 ? b : a));
+  let best = terms[0];
+  for (const t of terms.slice(1)) {
+    const better = mode === 'min' ? key(t) < key(best) : key(t) > key(best);
+    if (better) best = t;
+  }
   return best.value;
 }

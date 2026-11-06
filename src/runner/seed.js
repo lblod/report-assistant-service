@@ -12,7 +12,7 @@ const PAGE_SIZE = 5000;
 export async function fetchSubjects(spec, shape) {
   const subjects = [];
   let offset = 0;
-  for (;;) {
+  while (true) {
     const result = await query(buildSeedPageQuery(spec, shape, PAGE_SIZE, offset));
     const rows = result.results.bindings.map(b => b.s.value);
     subjects.push(...rows);
@@ -58,8 +58,9 @@ function buildDiscriminatorTest(d, varPrefix) {
   if (d.and) return `(${d.and.map((x, i) => buildDiscriminatorTest(x, `${varPrefix}_${i}`)).join(' && ')})`;
   if (d.or) return `(${d.or.map((x, i) => buildDiscriminatorTest(x, `${varPrefix}_${i}`)).join(' || ')})`;
   if (d.not) return `!(${buildDiscriminatorTest(d.not, `${varPrefix}_n`)})`;
-  const { maxCount, ...test } = d.constraints;
-  if (maxCount === 0) return `NOT EXISTS { ${buildFilterPattern({ ...d, constraints: test }, varPrefix)} }`;
+  if (d.constraints.maxCount === 0) {
+    return `NOT EXISTS { ${buildFilterPattern({ ...d, constraints: withoutMaxCount(d.constraints) }, varPrefix)} }`;
+  }
   return `EXISTS { ${buildFilterPattern(d, varPrefix)} }`;
 }
 
@@ -88,9 +89,9 @@ export function buildHopsPattern(hops, varPrefix, startVar, lastVar = `?${varPre
 // walks through. With sh:maxCount 0 the whole of it becomes "none such";
 // with a value test too (sh:in, sh:hasValue, ...), "none with such a value".
 function buildFilterPattern(filter, varPrefix) {
-  const { maxCount, ...test } = filter.constraints;
-  if (maxCount === 0) {
-    return `FILTER NOT EXISTS {\n    ${buildFilterPattern({ ...filter, constraints: test }, varPrefix)}\n  }`;
+  if (filter.constraints.maxCount === 0) {
+    const inner = { ...filter, constraints: withoutMaxCount(filter.constraints) };
+    return `FILTER NOT EXISTS {\n    ${buildFilterPattern(inner, varPrefix)}\n  }`;
   }
   const nodeVar = (k) => (k === filter.path.length ? `?${varPrefix}_v` : `?${varPrefix}_${k}`);
   const wheres = buildWherePatterns(filter.where, filter.path, nodeVar, varPrefix);
@@ -113,8 +114,7 @@ export function buildWherePatterns(where, hostHops, nodeVar, varPrefix) {
 // hops and any value test only live inside the NOT EXISTS.
 function buildConditionPattern(c, varPrefix, hops, startVar) {
   if (c.maxCount === 0) {
-    const { maxCount, ...test } = c;
-    return `FILTER NOT EXISTS { ${buildConditionPattern(test, varPrefix + '_nex', hops, startVar)} }`;
+    return `FILTER NOT EXISTS { ${buildConditionPattern(withoutMaxCount(c), varPrefix + '_nex', hops, startVar)} }`;
   }
   const v = hops.length ? `?${varPrefix}_v` : startVar;
   const parts = hops.length ? [buildHopsPattern(hops, varPrefix, startVar)] : [];
@@ -141,6 +141,14 @@ function buildConditionPattern(c, varPrefix, hops, startVar) {
     parts.push(`FILTER(${v} != ${w})`);
   }
   return parts.join('\n  ');
+}
+
+// The constraints without sh:maxCount: what goes inside a NOT EXISTS, so
+// the inner pattern does not become a NOT EXISTS again.
+function withoutMaxCount(constraints) {
+  const rest = { ...constraints };
+  delete rest.maxCount;
+  return rest;
 }
 
 // A spec value as SPARQL: a URI, a date, a dateTime, an integer or a

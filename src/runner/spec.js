@@ -66,7 +66,7 @@ function readWhere(store, node) {
 export function countSharedSteps(a, b) {
   let k = 0;
   while (k < a.length && k < b.length
-    && a[k].predicate === b[k].predicate && !!a[k].inverse === !!b[k].inverse) k++;
+    && a[k].predicate === b[k].predicate && a[k].inverse === b[k].inverse) k++;
   return k;
 }
 

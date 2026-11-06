@@ -103,12 +103,11 @@ function checkPathsResolve(spec, profile) {
   const startShapeUri = findStartShape(profile, spec).uri;
   for (const col of spec.columns) {
     const err = checkPath(profile, startShapeUri, col.path,
-      `column "${col.label}"`, true, col.nodeKind === SH + 'IRI');
+      `column "${col.label}"`, { isColumn: true, wantsIri: col.nodeKind === SH + 'IRI' });
     if (err) return err;
   }
   for (const [i, filter] of spec.filters.entries()) {
-    const err = checkPath(profile, startShapeUri, filter.path,
-      `filter ${i + 1}`, false);
+    const err = checkPath(profile, startShapeUri, filter.path, `filter ${i + 1}`);
     if (err) return err;
   }
   return null;
@@ -254,7 +253,7 @@ function checkWhereConditions(spec, profile) {
     if (cond.where.length) {
       return `${what} holds a rep:where of its own. Put every rep:where directly on the filter or column.`;
     }
-    const err = checkPath(profile, startShapeUri, cond.path, what, false);
+    const err = checkPath(profile, startShapeUri, cond.path, what);
     if (err) return err;
     const k = countSharedSteps(host.path, cond.path);
     if (!k) {
@@ -368,7 +367,7 @@ export function checkSpec(spec, profiles) {
 // decide. The query follows predicates only, so this is what the data does.
 function findHopFields(profile, shapeUris, hop) {
   return shapeUris.flatMap(uri => getFields(profile, uri)
-    .filter(f => f.path === hop.predicate && !!f.inverse === !!hop.inverse));
+    .filter(f => f.path === hop.predicate && f.inverse === hop.inverse));
 }
 
 // The fields a path can end on: follow sh:node through every hop but the
@@ -386,7 +385,9 @@ function findEndFields(profile, startShapeUri, hops) {
 // problem, or null: too many steps, a step the entity does not have, a step
 // past a value, or a column that ends on a link (or on a value while it asks
 // for a URI with sh:nodeKind sh:IRI). Every path check here uses it.
-function checkPath(profile, startShapeUri, hops, what, isColumn, wantsIri = false) {
+// Options: isColumn (the path must end on a value), wantsIri (the column
+// has sh:nodeKind sh:IRI).
+function checkPath(profile, startShapeUri, hops, what, { isColumn = false, wantsIri = false } = {}) {
   if (hops.length > MAX_PATH_DEPTH) {
     return `${what} walks ${hops.length} hops. The limit is ${MAX_PATH_DEPTH}.`;
   }
