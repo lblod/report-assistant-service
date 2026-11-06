@@ -36,8 +36,8 @@ match "/assistant/*path" do
 end
 ```
 
-The chat frontend is
-[frontend-report-assistant](https://github.com/lblod/frontend-report-assistant).
+The chat frontend is now compatible with: 
+[frontend-dashboard](https://github.com/lblod/frontend-dashboard).
 
 ### Configuration
 
@@ -89,13 +89,7 @@ scope, also the report run.
 
 The service writes messages, reports and files without a graph. So they land
 in every graph the user may write to that accepts those types. If you want
-them in one graph, set `WRITE_SCOPE`. Every write then runs under that
-scope, still as the user, and only the grants inside that scope apply. The
-conversation delete runs under it too. This is needed: without a scope,
-sparql-parser 0.0.15 deletes a triple in only one of the graphs that accept
-its type, and this may not be the graph the triple is in. Use another scope
-than `SERVICE_SCOPE`. If both are the same, the code-list reads of the LLM
-could reach the chat of the user. Example, one graph per user:
+them in one graph, set `WRITE_SCOPE`. Example, one graph per user:
 
 ```lisp
 (with-scope "http://services.semantic.works/natural-language-report/chat"
@@ -106,15 +100,11 @@ could reach the chat of the user. Example, one graph per user:
 
 ### Logging the LLM calls
 
-The call to the LLM provider goes over TLS.
-[app-http-logger](https://github.com/mu-semtech/app-http-logger) can not read
-it. An app that logs its traffic has a `sink`: a container with the `logging`
-label that answers every request with `200 {}`. If a service posts a copy of
-a TLS exchange to the sink, app-http-logger captures the copy like any other
-call. Set `LOG_SINK_URL` (for example `http://sink/llm`) and the service
+If you want the LLM calls in [app-http-logger](https://github.com/mu-semtech/app-http-logger),
+set `LOG_SINK_URL` to the sink (for example `http://sink/llm`). The service
 posts every exchange there as
-`{ "request": <the body sent>, "response": <the answer or { "error" }> }`.
-It does not wait for the sink.
+`{ "request": <the body sent>, "response": <the answer or { "error" }> }`
+and does not wait for the answer.
 
 Note: the copy has the questions of the users and the answers. Run
 app-http-logger in its encrypting mode.
@@ -235,7 +225,7 @@ lists and the names it looks up for a filter.
 | `LLM_RETRIES` | `3` | retries of an LLM call that fails on the network (no connection, a reset, no answer) or with a 500, 502, 503 or 504. Other failures are not retried. |
 | `LLM_RETRY_DELAY` | `2000` | ms before the first retry. Each next retry waits twice as long. |
 | `LOG_LLM` | `false` | log every LLM request and response to stdout |
-| `LOG_SINK_URL` | | if set, every LLM exchange (request body, response or error) is also POSTed here, without waiting, so app-http-logger can record it. See above. If not set, nothing is sent. |
+| `LOG_SINK_URL` | | if set, every LLM exchange is also POSTed to this sink so app-http-logger can record it. See above. |
 
 ### API
 
