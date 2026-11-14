@@ -23,6 +23,9 @@ ent:Organisatie a sh:NodeShape ;
   sh:property [ sh:path ext:isActief ; sh:name "actief" ; sh:datatype xsd:boolean ] ;
   sh:property [ sh:path regorg:orgStatus ; sh:name "organisatiestatus" ;
                 sh:node ent:OrganisatieStatus ] ;
+  # a code-list field: the codes have no entity of their own
+  sh:property [ sh:path ext:rechtsvorm ; sh:name "rechtsvorm" ;
+                sh:class code:Rechtsvorm ] ;
   sh:property [ sh:path org:hasPrimarySite ; sh:name "hoofdvestiging" ;
                 sh:node ent:Vestiging ] ;
   sh:property [ sh:path org:hasSite ; sh:name "vestiging" ;

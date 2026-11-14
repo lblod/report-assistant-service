@@ -23,6 +23,7 @@
 
 ent:Bestuurseenheid a sh:NodeShape ;
   rdfs:label "bestuurseenheid" ;
+  sh:description "wijs één bestuurseenheid aan met soort bestuur + naam" ;
   sh:targetClass besluit:Bestuurseenheid ;
   sh:property [ sh:path skos:prefLabel ; sh:name "naam" ; sh:datatype xsd:string ] ;
   sh:property [ sh:path org:classification ; sh:name "soort bestuur" ;
@@ -83,9 +84,11 @@ ent:BestuursfunctieCode a sh:NodeShape ;
 ent:Mandataris a sh:NodeShape ;
   rdfs:label "mandataris" ;
   sh:targetClass mandaat:Mandataris ;
-  sh:property [ sh:path mandaat:start ; sh:name "start" ; sh:datatype xsd:dateTime ] ;
+  sh:property [ sh:path mandaat:start ; sh:name "start" ; sh:datatype xsd:dateTime ;
+                sh:description "Start van de aanstelling" ] ;
   sh:property [ sh:path mandaat:einde ; sh:name "einde" ; sh:datatype xsd:dateTime ] ;
   sh:property [ sh:path mandaat:status ; sh:name "status" ;
+                sh:description "Status van de mandataris, bv. effectief, verhinderd" ;
                 sh:node ent:MandatarisStatus ] ;
   sh:property [ sh:path mandaat:isBestuurlijkeAliasVan ; sh:name "persoon" ;
                 sh:node ent:Persoon ] ;
