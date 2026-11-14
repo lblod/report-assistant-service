@@ -123,7 +123,7 @@ export async function ask(turns, profiles) {
   let spec = null;
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    const message = await callLlm(messages, TOOLS);
+    const message = await callLlm(messages, { tools: TOOLS });
     messages.push(message);
     const calls = message.tool_calls || [];
     if (!calls.length) return { text: message.content || '', spec };
@@ -222,9 +222,11 @@ function addCurrentSpec(messages, current) {
 }
 
 // The one place that talks to the provider. Without tools it is a plain
-// completion (the mode check). Returns the model's message, its content as
-// text (see readContent).
-export async function callLlm(messages, tools = null) {
+// completion (the mode check, the report plan). extra holds fields that go
+// into the request as they are, for example response_format. Returns the
+// model's message, its content as text (see readContent), with the reason
+// the model stopped as finishReason.
+export async function callLlm(messages, { tools = null, extra = {} } = {}) {
   // Send only the fields every provider accepts back. Attachments never go
   // out.
   const wire = messages.map(m => {
@@ -239,7 +241,7 @@ export async function callLlm(messages, tools = null) {
     if (m.role === 'tool' && m.tool_call_id) out.tool_call_id = m.tool_call_id;
     return out;
   });
-  const body = { model: LLM_MODEL, messages: wire };
+  const body = { model: LLM_MODEL, messages: wire, ...extra };
   if (tools) body.tools = tools;
   if (LOG_LLM) {
     console.log(`[llm] POST ${LLM_BASE_URL}/chat/completions request:\n${
@@ -258,9 +260,14 @@ export async function callLlm(messages, tools = null) {
     console.log(`[llm] response:\n${JSON.stringify(data, null, 2)}`);
   }
   if (LOG_SINK_URL) copyToSink(body, data);
-  const message = data?.choices?.[0]?.message;
-  if (!message) throw new Error('the LLM answered without a message');
-  return Array.isArray(message.content) ? { ...message, content: readContent(message.content) } : message;
+  const choice = data?.choices?.[0];
+  if (!choice?.message) throw new Error('the LLM answered without a message');
+  const { message } = choice;
+  return {
+    ...message,
+    content: Array.isArray(message.content) ? readContent(message.content) : message.content,
+    finishReason: choice.finish_reason ?? null,
+  };
 }
 
 // The answer text of a content that came as a list of parts. Most providers

@@ -1,6 +1,7 @@
 // What the service scope reads of the test profiles: the code lists, and of
 // the bestuurseenheden just one, like the public graph of the portal.
 import { createCodes } from '../../src/plan/codes.js';
+import { uri, literal, rows } from './mu.mjs';
 
 const CODE = 'http://lblod.data.gift/vocabularies/organisatie/';
 export const BESTUURSEENHEID = 'http://data.vlaanderen.be/ns/besluit#Bestuurseenheid';
@@ -30,3 +31,13 @@ export function buildTestLists() {
 }
 
 export const codes = createCodes(buildTestLists());
+
+// The answer of the database to the query that reads the names of one
+// class (plan/read-codes.js), from the test lists; undefined for any other
+// query. Only for the service scope, like the public graph in a stack.
+export function answerNames(query, options, lists = buildTestLists()) {
+  const asked = query.match(/\?uri a <([^>]+)> ;\s+<[^>]+> \?label \.\s+\} LIMIT \d+$/);
+  if (!asked) return undefined;
+  if (options.scope !== 'http://services.semantic.works/report-assistant') return rows();
+  return rows(...(lists.get(asked[1])?.values || []).map(v => ({ uri: uri(v.uri), label: literal(v.label) })));
+}

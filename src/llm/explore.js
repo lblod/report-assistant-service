@@ -14,7 +14,7 @@ const LOOKUP_LIMIT = 25;
 
 // Every read of the LLM goes through here, under the service scope: public
 // data only, the same for every caller.
-function queryPublic(q) {
+export function queryPublic(q) {
   return query(q, { scope: SERVICE_SCOPE });
 }
 

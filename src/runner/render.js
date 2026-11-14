@@ -1,9 +1,12 @@
-// A spec in Dutch words, written by code from the spec and its profile. The
-// text says what the spec does, in the names of the profile: no LLM writes
-// it, so it cannot differ from what runs. Profile only, no database.
+// A spec in Dutch words, written by code from the spec and its profile: the
+// description of a report (describeSpec) and the proposal the user agrees
+// to (explainSpec). The text says what the spec does, in the names of the
+// profile: no LLM writes it, so it cannot differ from what runs. Profile
+// only, no database.
 import { findStartShape, getFields } from './profile.js';
 import { countSharedSteps } from './spec.js';
 
+const SH = 'http://www.w3.org/ns/shacl#';
 const XSD_DATETIME = 'http://www.w3.org/2001/XMLSchema#dateTime';
 const XSD_BOOLEAN = 'http://www.w3.org/2001/XMLSchema#boolean';
 const MAX_LENGTH = 300;
@@ -23,6 +26,25 @@ export function describeSpec(spec, profile, labelOf = () => null) {
   ].join(' '));
 }
 
+// A spec explained in full, for the user to agree to: what a row is, every
+// filter and every column, then the notes of whoever made the spec, each as
+// "Let op: ...". Markdown, like the other answers of the assistant. The
+// blocks stand apart by an empty line: without one, Markdown reads the line
+// after a list as more of its last item. What comes from the spec is
+// escaped, so a name with a star or an underscore in it shows as it is.
+export function explainSpec(spec, profile, labelOf = () => null, notes = []) {
+  const start = findStartShape(profile, spec);
+  const list = (title, items) => [title, ...items.map(text => `- ${escapeMarkdown(text)}`)].join('\n');
+  return [
+    escapeMarkdown(`Rapport "${spec.title}": één rij per ${start.label || shortenUri(start.uri)} (profiel ${profile.title}).`),
+    spec.filters.length
+      ? list('Filters:', spec.filters.map(f => renderFilter(f, profile, start.uri, labelOf)))
+      : 'Geen filters: alle rijen.',
+    list('Kolommen:', spec.columns.map(c => renderColumn(c, profile, start.uri, labelOf))),
+    ...notes.map(note => escapeMarkdown(`Let op: ${note}`)),
+  ].join('\n\n');
+}
+
 // The URIs a spec tests for (sh:hasValue, sh:in), so the caller can look up
 // their names for the text.
 export function listValueUris(spec) {
@@ -39,8 +61,24 @@ function renderFilter(filter, profile, startUri, labelOf) {
   return `${renderCondition(path, filter.constraints, labelOf)}${where.length ? ` (${where.join('; ')})` : ''}`;
 }
 
-// A rep:where: which node it shares with its filter, and what it tests from
-// there. "zelfde" keeps the sentence right for de- and het-words alike.
+// One column: its header, its path in field names, and in brackets how its
+// values are gathered and which of them it keeps.
+function renderColumn(column, profile, startUri, labelOf) {
+  const path = column.path.length ? namePath(profile, startUri, column.path).join(' › ') : 'de URI van de rij';
+  const extras = [];
+  if (column.nodeKind === SH + 'IRI') extras.push('als URI');
+  if (column.collect === SH + 'groupConcat') {
+    extras.push(`alle waarden in één cel${column.separator ? `, gescheiden door "${column.separator}"` : ''}`);
+  }
+  if (column.collect === SH + 'min') extras.push('de laagste waarde');
+  if (column.collect === SH + 'max') extras.push('de hoogste waarde');
+  for (const where of column.where) extras.push(`enkel waar ${renderWhere(where, column.path, profile, startUri, labelOf)}`);
+  return `${column.label}: ${path}${extras.length ? ` (${extras.join('; ')})` : ''}`;
+}
+
+// A rep:where: which node it shares with its filter or column, and what it
+// tests from there. "zelfde" keeps the sentence right for de- and het-words
+// alike.
 function renderWhere(where, hostPath, profile, startUri, labelOf) {
   const shared = countSharedSteps(hostPath, where.path);
   const names = namePath(profile, startUri, where.path);
@@ -163,6 +201,15 @@ function findFields(profile, shapeUris, hop) {
 // The last part of a URI.
 function shortenUri(uri) {
   return uri.replace(/^.*[/#]/, '');
+}
+
+// Text that Markdown shows letter for letter. A URI between angle brackets,
+// the way a value without a name is written, stays as it is: Markdown shows
+// that as a link.
+function escapeMarkdown(text) {
+  return text.split(/(<https?:\/\/[^\s<>]+>)/)
+    .map((part, i) => (i % 2 ? part : part.replace(/[\\`*_{}[\]<>#|~]/g, '\\$&')))
+    .join('');
 }
 
 // One line of at most MAX_LENGTH characters; a cut gets an ellipsis.

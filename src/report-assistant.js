@@ -2,7 +2,10 @@
 // exists before the answer is written.
 //
 // Refine: the LLM proposes a spec. The last spec that checked out goes on the
-// answer as a bijlage, not in the text.
+// answer as a bijlage, not in the text. REFINE_PROTOCOL says how the LLM
+// gets to a spec: "plan", it fills a JSON plan that the service compiles
+// (plan/propose.js), or "tools", it writes the Turtle itself and calls tools
+// (llm/loop.js).
 //
 // Execute: the last spec bijlage in the conversation is the agreed spec; it
 // goes straight to the runner. The answer is fixed text; nothing is retried
@@ -13,6 +16,8 @@
 // prepareSpec reads and checks it, runSavedSpec runs it.
 import { uuid } from 'mu';
 import { ask } from './llm/loop.js';
+import { propose } from './plan/propose.js';
+import { buildCatalogue } from './plan/catalogue.js';
 import { parseSpec } from './runner/spec.js';
 import { checkSpec } from './runner/check.js';
 import { runReport } from './runner/run.js';
@@ -21,6 +26,11 @@ import { fetchLabels } from './llm/explore.js';
 import { storeSpecFile, readSpecFile, writeShareFile, registerFile, registerReport,
          registerReportSpec, SPEC_MEDIA_TYPE, RESULT_TYPE } from './chat.js';
 
+const REFINE_PROTOCOL = process.env.REFINE_PROTOCOL || 'plan';
+if (!['plan', 'tools'].includes(REFINE_PROTOCOL)) {
+  throw new Error(`REFINE_PROTOCOL is "${REFINE_PROTOCOL}". It must be "plan" or "tools".`);
+}
+
 const TEXT = {
   executed: 'Het rapport is uitgevoerd. De bijlagen staan erbij.',
   noSpec: 'Er is nog geen voorstel om uit te voeren. Beschrijf eerst welk rapport je wilt.',
@@ -28,12 +38,19 @@ const TEXT = {
   noAnswer: 'Er kwam geen antwoord. Probeer het opnieuw.',
 };
 
-// One refine turn: the LLM answers, and the spec it validated is stored and
-// attached to that answer as a bijlage. An empty answer (a reasoning model
-// can end with no text) gets a fixed text and no spec: only a spec the user
-// saw explained may run.
+// What can be checked about the profiles when the service starts, beyond
+// what loading them checks: with plans, every entity and field needs a name
+// of its own. Throws when a profile does not fit.
+export function checkProfiles(profiles) {
+  if (REFINE_PROTOCOL === 'plan') buildCatalogue(profiles);
+}
+
+// One refine turn: the LLM answers, and the spec that checked out is stored
+// and attached to that answer as a bijlage. An empty answer (a reasoning
+// model can end with no text) gets a fixed text and no spec: only a spec the
+// user saw explained may run.
 export async function refineSpec(turns, profiles) {
-  const { text, spec } = await ask(turns, profiles);
+  const { text, spec } = REFINE_PROTOCOL === 'plan' ? await propose(turns, profiles) : await ask(turns, profiles);
   if (!text.trim()) return { text: TEXT.noAnswer };
   const attachments = spec ? [await storeSpecFile(spec)] : [];
   return { text: text.trim(), attachments };

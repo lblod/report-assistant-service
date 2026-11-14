@@ -2,11 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { callLlm } from '../src/llm/loop.js';
 import { wantsExecution } from '../src/llm/mode.js';
-import { refineSpec } from '../src/report-assistant.js';
 import { scriptLlm, completion, chunks } from './support/llm.mjs';
-import { loadTestProfiles } from './support/profiles.js';
 
-const profiles = loadTestProfiles();
 const QUESTION = [{ role: 'user', content: 'Geef alle mandatarissen.' }];
 
 test('callLlm: sends the model and the messages, returns the message', async () => {
@@ -83,12 +80,4 @@ test('wantsExecution: reads "true" from a list of parts, never from the thinking
 
   scriptLlm([completion([{ type: 'thinking', thinking: [{ type: 'text', text: 'true' }] }])]);
   assert.equal(await wantsExecution(turns), false, 'no text part: refine');
-});
-
-test('refineSpec: an answer that comes as a list of parts is the answer text', async () => {
-  scriptLlm([completion(chunks('Which profile?', ' Welke gegevens wil je zien? '))]);
-  assert.deepEqual(await refineSpec(QUESTION, profiles), { text: 'Welke gegevens wil je zien?', attachments: [] });
-
-  scriptLlm([completion([{ type: 'thinking', thinking: [] }])]);
-  assert.deepEqual(await refineSpec(QUESTION, profiles), { text: 'Er kwam geen antwoord. Probeer het opnieuw.' });
 });

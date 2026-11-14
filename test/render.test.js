@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSpec } from '../src/runner/spec.js';
 import { checkSpec } from '../src/runner/check.js';
-import { describeSpec, listValueUris } from '../src/runner/render.js';
+import { describeSpec, explainSpec, listValueUris } from '../src/runner/render.js';
 import { loadTestProfiles, mandatenSpec, MANDATEN, ORGANISATIES, PREFIXES } from './support/profiles.js';
 
 const profiles = loadTestProfiles();
@@ -112,4 +112,54 @@ test('listValueUris: the URIs of filters and of rep:where on filters and columns
     rep:columns ( [ sh:path ( org:holds mandaat:aantalHouders ) ; rdfs:label "houders" ;
                     rep:where [ sh:path ( org:holds org:role ) ; sh:hasValue <${CODE}effectief> ] ] )`));
   assert.deepEqual(listValueUris(spec), [`${CODE}effectief`, `${CODE}waarnemend`, `${CODE}burgemeester`]);
+});
+
+test('explainSpec: the whole spec, one filter and one column per line', () => {
+  const spec = parseSpec(mandatenSpec(`sh:targetClass besluit:Bestuurseenheid ;
+    sh:property [ sh:path org:classification ; sh:hasValue <${CODE}gemeente> ] ;
+    rep:columns (
+      [ sh:path rep:self ; rdfs:label "uri" ]
+      [ sh:path skos:prefLabel ; rdfs:label "naam" ]
+      [ sh:path org:classification ; rdfs:label "soort" ; sh:nodeKind sh:IRI ]
+      [ sh:path ( [ sh:inversePath besluit:bestuurt ] org:classification skos:prefLabel ) ; rdfs:label "organen" ;
+        rep:collect sh:groupConcat ; sh:separator " | " ]
+      [ sh:path ( [ sh:inversePath besluit:bestuurt ] [ sh:inversePath generiek:isTijdspecialisatieVan ] mandaat:bindingStart ) ;
+        rdfs:label "eerste periode" ; rep:collect sh:min ;
+        rep:where [ sh:path ( [ sh:inversePath besluit:bestuurt ] org:classification ) ; sh:hasValue <${CODE}raad> ] ]
+    )`, { title: 'Gemeenten' }));
+  assert.equal(checkSpec(spec, profiles), null);
+
+  assert.equal(explainSpec(spec, profiles.get(MANDATEN), labelOf), [
+    'Rapport "Gemeenten": één rij per bestuurseenheid (profiel Mandaten).',
+    '',
+    'Filters:',
+    '- soort bestuur is Gemeente',
+    '',
+    'Kolommen:',
+    '- uri: de URI van de rij',
+    '- naam: naam',
+    '- soort: soort bestuur (als URI)',
+    '- organen: bestuursorganen › soort bestuursorgaan › naam (alle waarden in één cel, gescheiden door " \\| ")',
+    '- eerste periode: bestuursorganen › heeft tijdsspecialisaties › binding start (de laagste waarde; enkel waar zelfde bestuursorgaan: soort bestuursorgaan is <http://example.org/code/raad>)',
+  ].join('\n'));
+});
+
+test('explainSpec: no filters, notes, and text of the spec that Markdown would read as marks', () => {
+  const spec = parseSpec(mandatenSpec(`sh:targetClass mandaat:Mandataris ;
+    rep:columns ( [ sh:path mandaat:start ; rdfs:label "start_van_*mandaat*" ] )`, { title: 'Alle [mandatarissen]' }));
+
+  assert.equal(explainSpec(spec, profiles.get(MANDATEN), labelOf, ['Een opmerking over "a_b".']), [
+    'Rapport "Alle \\[mandatarissen\\]": één rij per mandataris (profiel Mandaten).',
+    '',
+    'Geen filters: alle rijen.',
+    '',
+    'Kolommen:',
+    '- start\\_van\\_\\*mandaat\\*: start',
+    '',
+    'Let op: Een opmerking over "a\\_b".',
+  ].join('\n'));
+
+  const own = parseSpec(mandatenSpec(`sh:targetClass mandaat:Mandataris ;
+    rep:columns ( [ sh:path mandaat:einde ; rdfs:label "einddatum" ; rep:where [ sh:path mandaat:einde ; sh:minCount 1 ] ] )`));
+  assert.ok(explainSpec(own, profiles.get(MANDATEN)).endsWith('- einddatum: einde (enkel waar einde is ingevuld)'));
 });
