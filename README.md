@@ -385,6 +385,10 @@ mayor stay on one row. Where paths split and both sides have several values,
 every combination becomes a row. A missing value is an empty cell. Identical
 rows show once.
 
+The rows follow the URI of their subject. The rows of one subject and the
+values in a joined cell follow the text of their values. So the same data
+gives the same CSV, whatever order the database answers in.
+
 ## Advanced topics
 
 ### Entities that share a class

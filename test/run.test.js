@@ -80,7 +80,39 @@ test('assemble: columns through the same node stay on one row, sh:groupConcat fo
 
   assert.deepEqual(assemble([eenheid, 'http://example.org/eenheid/2'], values, spec), [
     ['eenheid', 'organen'],
-    ['Aalst', 'Gemeenteraad | College'],
+    ['Aalst', 'College | Gemeenteraad'],
     ['', ''],
   ]);
+});
+
+test('assemble: the order the database answers in does not change the report', () => {
+  const spec = parseSpec(mandatenSpec(`sh:targetClass besluit:Bestuurseenheid ;
+    rep:columns (
+      [ sh:path ( [ sh:inversePath besluit:bestuurt ] org:classification skos:prefLabel ) ; rdfs:label "orgaan" ]
+      [ sh:path ( [ sh:inversePath besluit:bestuurt ] [ sh:inversePath generiek:isTijdspecialisatieVan ] mandaat:bindingStart ) ;
+        rdfs:label "periodes" ; rep:collect sh:groupConcat ]
+    )`));
+  const eenheid = 'http://example.org/eenheid/1';
+  const orgaan = (n) => uri(`http://example.org/orgaan/${n}`);
+  const names = [
+    [orgaan(1), uri('http://example.org/code/raad'), literal('Gemeenteraad')],
+    [orgaan(2), uri('http://example.org/code/college'), literal('College')],
+    [orgaan(3), uri('http://example.org/code/burgemeester'), literal('Burgemeester')],
+  ];
+  const periods = [
+    [orgaan(1), uri('http://example.org/tijd/1b'), literal('2025-01-01')],
+    [orgaan(1), uri('http://example.org/tijd/1a'), literal('2019-01-01')],
+    [orgaan(3), uri('http://example.org/tijd/3a'), literal('2019-01-01')],
+  ];
+  const report = (nameRows, periodRows) => assemble([eenheid], new Map([[eenheid, new Map([[0, nameRows], [1, periodRows]])]]), spec);
+
+  const expected = [
+    ['orgaan', 'periodes'],
+    ['Gemeenteraad', '2019-01-01,2025-01-01'],
+    ['College', ''],
+    ['Burgemeester', '2019-01-01'],
+  ];
+  assert.deepEqual(report(names, periods), expected);
+  assert.deepEqual(report([...names].reverse(), [...periods].reverse()), expected);
+  assert.deepEqual(report([names[1], names[2], names[0]], [periods[2], periods[0], periods[1]]), expected);
 });
