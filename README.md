@@ -472,6 +472,21 @@ SHACL reading, a person who also has a second mandate would drop out. The
 No counting, no sorting, no top-N, no comparing two subjects. One class per
 report. Filter suggestions read only what the service scope may read.
 
+## Development
+
+### Tests
+
+```sh
+npm ci
+npm test
+```
+
+The tests run under plain Node (20 or newer), without a stack. The `mu`
+module only exists inside the mu-javascript-template image, so the tests load
+a stand-in for it (`test/support/mu.mjs`). The stand-in records the SPARQL
+the service sends and returns what the test scripts. No test reaches a
+database or an LLM.
+
 ## Discussion
 
 ### Why a report spec and not SPARQL

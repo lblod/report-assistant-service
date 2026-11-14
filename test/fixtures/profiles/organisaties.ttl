@@ -1,0 +1,55 @@
+# Test profile "Organisaties": an organisation, its sites and their address.
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct:   <http://purl.org/dc/terms/> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+@prefix org:   <http://www.w3.org/ns/org#> .
+@prefix locn:  <http://www.w3.org/ns/locn#> .
+@prefix regorg: <http://www.w3.org/ns/regorg#> .
+@prefix code:  <http://lblod.data.gift/vocabularies/organisatie/> .
+@prefix ext:   <http://mu.semte.ch/vocabularies/ext/> .
+@prefix ent:   <http://data.lblod.info/id/report-entities/> .
+
+<http://data.lblod.info/id/report-profiles/organisaties> a owl:Ontology ;
+  dct:title "Organisaties" .
+
+ent:Organisatie a sh:NodeShape ;
+  rdfs:label "organisatie" ;
+  sh:targetClass org:Organization ;
+  sh:property [ sh:path skos:prefLabel ; sh:name "naam" ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ext:oprichtingsdatum ; sh:name "opgericht op" ; sh:datatype xsd:date ] ;
+  sh:property [ sh:path ext:isActief ; sh:name "actief" ; sh:datatype xsd:boolean ] ;
+  sh:property [ sh:path regorg:orgStatus ; sh:name "organisatiestatus" ;
+                sh:node ent:OrganisatieStatus ] ;
+  sh:property [ sh:path org:hasPrimarySite ; sh:name "hoofdvestiging" ;
+                sh:node ent:Vestiging ] ;
+  sh:property [ sh:path org:hasSite ; sh:name "vestiging" ;
+                sh:node ent:Vestiging ] .
+
+ent:OrganisatieStatus a sh:NodeShape ;
+  rdfs:label "organisatiestatus" ;
+  sh:targetClass code:OrganisatieStatusCode ;
+  sh:property [ sh:path skos:prefLabel ; sh:name "naam" ; sh:datatype xsd:string ] .
+
+ent:Vestiging a sh:NodeShape ;
+  rdfs:label "vestiging" ;
+  sh:targetClass org:Site ;
+  sh:property [ sh:path dct:description ; sh:name "omschrijving" ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ext:siteType ; sh:name "type vestiging" ;
+                sh:node ent:TypeVestiging ] ;
+  sh:property [ sh:path org:siteAddress ; sh:name "adres" ;
+                sh:node ent:Adres ] .
+
+ent:TypeVestiging a sh:NodeShape ;
+  rdfs:label "type vestiging" ;
+  sh:targetClass code:TypeVestiging ;
+  sh:property [ sh:path skos:prefLabel ; sh:name "naam" ; sh:datatype xsd:string ] .
+
+# an entity without a name
+ent:Adres a sh:NodeShape ;
+  rdfs:label "adres" ;
+  sh:targetClass locn:Address ;
+  sh:property [ sh:path locn:fullAddress ; sh:name "volledig adres" ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path locn:postCode ; sh:name "postcode" ; sh:datatype xsd:string ] .
