@@ -219,7 +219,7 @@ function addCurrentSpec(messages, current) {
 
 // The one place that talks to the provider. Without tools it is a plain
 // completion (the mode check and the report description). Returns the
-// model's message.
+// model's message, its content as text (see readContent).
 export async function callLlm(messages, tools = null) {
   // Send only the fields every provider accepts back. Attachments never go
   // out.
@@ -254,7 +254,19 @@ export async function callLlm(messages, tools = null) {
     console.log(`[llm] response:\n${JSON.stringify(data, null, 2)}`);
   }
   if (LOG_SINK_URL) copyToSink(body, data);
-  return data.choices[0].message;
+  const message = data?.choices?.[0]?.message;
+  if (!message) throw new Error('the LLM answered without a message');
+  return Array.isArray(message.content) ? { ...message, content: readContent(message.content) } : message;
+}
+
+// The answer text of a content that came as a list of parts. Most providers
+// send the content as a string. Some send a list, for example Mistral for a
+// reasoning model: [{ type: 'thinking', ... }, { type: 'text', text }]. Only
+// the text parts are the answer; the thinking is not.
+export function readContent(parts) {
+  return parts
+    .map(part => (typeof part === 'string' ? part : part?.type === 'text' ? String(part.text ?? '') : ''))
+    .join('');
 }
 
 // A copy of one exchange to the app's log sink: the body as it went to the
