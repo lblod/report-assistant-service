@@ -3,8 +3,9 @@
 // queryPublic: the service scope, not the caller's session. The app grants
 // that scope the public graph only, so the LLM reads public data, the same
 // for every caller, and never what a report would show. Nothing here counts
-// or runs a spec.
-import { query, sparqlEscapeString } from 'mu';
+// or runs a spec. The names of the filter values in a report's description
+// are read the same way (fetchLabels).
+import { query, sparqlEscapeString, sparqlEscapeUri } from 'mu';
 
 // Must match the with-scope grant in the app's config.lisp.
 const SERVICE_SCOPE = process.env.SERVICE_SCOPE || 'http://services.semantic.works/report-assistant';
@@ -40,6 +41,27 @@ export async function fetchCodeList(type) {
     values = [];
   }
   return { values, more };
+}
+
+// The names (skos:prefLabel) of these URIs, as a Map from URI to name, for
+// the text the service writes about a spec. A spec only holds URIs that were
+// found through the service scope, so that is where their names are. Empty
+// when the read fails: the text then shows the URI.
+export async function fetchLabels(uris) {
+  const labels = new Map();
+  if (!uris.length) return labels;
+  try {
+    const r = await queryPublic(`SELECT ?uri ?label WHERE {
+    VALUES ?uri { ${uris.map(sparqlEscapeUri).join(' ')} }
+    ?uri <http://www.w3.org/2004/02/skos/core#prefLabel> ?label .
+  }`);
+    for (const b of r.results.bindings) {
+      if (!labels.has(b.uri.value)) labels.set(b.uri.value, b.label.value);
+    }
+  } catch (e) {
+    console.error('[reports] could not read the names of the filter values:', e.message);
+  }
+  return labels;
 }
 
 // The code-list values that match a term, as text for the LLM: up to

@@ -74,8 +74,9 @@ values. These reads do not run as the user. They run with the scope of the
 service, `http://services.semantic.works/report-assistant`
 (`SERVICE_SCOPE`). Grant that scope read access to the graph with the code
 lists and the names. If the scope can not read a code list or an entity, the
-LLM sees it as "(not readable)" and filters on the name text instead. With
-sparql-parser:
+LLM sees it as "(not readable)" and filters on the name text instead. The
+description of a report names its filter values; those names are read with
+the same scope. With sparql-parser:
 
 ```lisp
 (with-scope "http://services.semantic.works/report-assistant"
@@ -186,9 +187,9 @@ modes.
   fixes what the check reports. The answer explains the spec in Dutch and
   has the spec as bijlage. Nothing runs.
 - Execute. The service takes the last spec bijlage of the conversation and
-  checks it again. Right before the run, one LLM call writes the
-  `dct:description` of the report. It uses the conversation for this. It
-  does not see the report data. The service runs the spec as the user,
+  checks it again. It writes the `dct:description` of the report from the
+  spec: what a row is, the filters and the columns, in the names of the
+  profile. No LLM is called. The service runs the spec as the user,
   writes the CSV to the share and records a `reporting:Report` and a
   `reporting:ReportSpec`. The report links to the spec with
   `dct:conformsTo`. The answer is a fixed text with the CSV and the spec as

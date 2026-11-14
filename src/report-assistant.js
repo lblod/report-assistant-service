@@ -6,8 +6,8 @@
 //
 // Execute: the last spec bijlage in the conversation is the agreed spec; it
 // goes straight to the runner. The answer is fixed text; nothing is retried
-// and no spec is rewritten. The caller writes the report's description right
-// before the run, so execution holds no LLM call.
+// and no spec is rewritten. The report's description is written by code from
+// the spec, so execution holds no LLM call.
 //
 // A saved spec can also run again outside the chat, for the report spec tab:
 // prepareSpec reads and checks it, runSavedSpec runs it.
@@ -16,6 +16,8 @@ import { ask } from './llm/loop.js';
 import { parseSpec } from './runner/spec.js';
 import { checkSpec } from './runner/check.js';
 import { runReport } from './runner/run.js';
+import { describeSpec, listValueUris } from './runner/render.js';
+import { fetchLabels } from './llm/explore.js';
 import { storeSpecFile, readSpecFile, writeShareFile, registerFile, registerReport,
          registerReportSpec, SPEC_MEDIA_TYPE, RESULT_TYPE } from './chat.js';
 
@@ -67,17 +69,25 @@ export function prepareExecution(history, profiles) {
   return { spec, attachment };
 }
 
-// Runs a prepared spec as the user and records its ReportSpec and report.
-// The description comes from the caller, which writes it from the
-// conversation right before this call: execution never talks to the LLM and
-// never sees report data. The spec bijlage the user agreed to goes on this
-// answer too, and the ReportSpec points at it, so the spec can run again
-// later. A failed run throws; the route then writes its failure text.
-export async function executeSpec({ spec, attachment }, conversation, profiles, description) {
+// Runs a prepared spec as the user and records its ReportSpec and report,
+// with a description of the spec (writeDescription). Execution never talks
+// to the LLM. The spec bijlage the user agreed to goes on this answer too,
+// and the ReportSpec points at it, so the spec can run again later. A failed
+// run throws; the route then writes its failure text.
+export async function executeSpec({ spec, attachment }, conversation, profiles) {
+  const description = await writeDescription(spec, profiles);
   const csvFile = await runSpec(spec, profiles);
   const specUri = await registerReportSpec(spec.title, description, conversation.uri, attachment.uri);
   await registerReport(spec.title, csvFile, description, specUri);
   return { text: TEXT.executed, attachments: [csvFile, attachment.uri] };
+}
+
+// The dct:description of a report: what the spec lists and filters, in
+// Dutch, written by code from the spec. The filter values show by name; the
+// names are read under the service scope, like the code lists.
+async function writeDescription(spec, profiles) {
+  const labels = await fetchLabels(listValueUris(spec));
+  return describeSpec(spec, profiles.get(spec.profileUri), uri => labels.get(uri));
 }
 
 // Runs a saved spec again as the user, outside the chat, and records a new

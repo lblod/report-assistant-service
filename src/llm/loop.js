@@ -222,8 +222,8 @@ function addCurrentSpec(messages, current) {
 }
 
 // The one place that talks to the provider. Without tools it is a plain
-// completion (the mode check and the report description). Returns the
-// model's message, its content as text (see readContent).
+// completion (the mode check). Returns the model's message, its content as
+// text (see readContent).
 export async function callLlm(messages, tools = null) {
   // Send only the fields every provider accepts back. Attachments never go
   // out.
