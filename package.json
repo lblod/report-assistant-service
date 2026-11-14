@@ -6,7 +6,8 @@
   "type": "module",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js"
+    "start": "node app.js",
+    "test": "node --import ./test/support/register.mjs --test test/*.test.js"
   },
   "dependencies": {
     "n3": "^1.17.0"

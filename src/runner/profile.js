@@ -45,9 +45,10 @@ function loadProfile(file) {
   const shapeList = shapes.map(shape => {
     const targetClass = store.getQuads(shape, SH + 'targetClass', null)[0]?.object.value || null;
     const label = store.getQuads(shape, 'http://www.w3.org/2000/01/rdf-schema#label', null)[0]?.object.value || null;
+    const description = store.getQuads(shape, SH + 'description', null)[0]?.object.value || null;
     const fields = store.getQuads(shape, SH + 'property', null).map(q => parseField(store, q.object));
     const discriminators = parseDiscriminators(store, shape);
-    return { uri: shape.value, targetClass, label, fields, discriminators };
+    return { uri: shape.value, targetClass, label, description, fields, discriminators };
   });
 
   return { uri, title, shapes: shapeList };
@@ -63,12 +64,14 @@ function readPath(store, node) {
 }
 
 // One field of an entity: name, path, and what it holds: a datatype (a
-// value), a sh:class (a code list) or links to other entities.
+// value), a sh:class (a code list) or links to other entities. Its
+// sh:description is a hint for whoever picks the field.
 function parseField(store, p) {
   const one = (pred) => store.getQuads(p, pred, null)[0]?.object?.value || null;
   return {
     ...readPath(store, p),
     name: one(SH + 'name'),
+    description: one(SH + 'description'),
     datatype: one(SH + 'datatype'),
     class: one(SH + 'class'),
     nodes: findLinkedShapes(store, p, one(SH + 'name')),

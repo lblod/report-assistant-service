@@ -3,8 +3,7 @@ import bodyParser from 'body-parser';
 import { loadProfiles } from './src/runner/profile.js';
 import { readConversation, readHistory, writeMessage, deleteConversation, readReportSpec, CHAT_ASSISTANT_URI } from './src/chat.js';
 import { wantsExecution } from './src/llm/mode.js';
-import { describeReport } from './src/llm/summary.js';
-import { prepareExecution, executeSpec, refineSpec, prepareSpec, runSavedSpec } from './src/report-assistant.js';
+import { prepareExecution, executeSpec, refineSpec, prepareSpec, runSavedSpec, checkProfiles } from './src/report-assistant.js';
 
 const PROFILE_DIR = process.env.PROFILE_DIR || '/config/profiles';
 const TITLE_LENGTH = 80;
@@ -12,6 +11,7 @@ const FAILED = 'Er ging iets mis. Probeer het opnieuw.';
 
 // Profiles load at boot. A broken profile stops the service.
 const profiles = loadProfiles(PROFILE_DIR);
+checkProfiles(profiles);
 
 // One chat turn. Records the question, answers 202, then writes the
 // assistant's answer; the frontend polls the conversation for it. A turn
@@ -48,14 +48,7 @@ app.post('/assistant/conversations/:id/turns', bodyParser.json(), async function
     let answer;
     if (await wantsExecution(turns)) {
       const prepared = prepareExecution(history, profiles);
-      if (!prepared.spec) {
-        answer = prepared;
-      } else {
-        // The description is written from the conversation right before the
-        // run, outside the execution itself.
-        const description = await describeReport(history, prepared.spec.title || conversation.title);
-        answer = await executeSpec(prepared, conversation, profiles, description);
-      }
+      answer = prepared.spec ? await executeSpec(prepared, conversation, profiles) : prepared;
     } else {
       answer = await refineSpec(turns, profiles);
     }

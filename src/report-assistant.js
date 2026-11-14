@@ -2,22 +2,34 @@
 // exists before the answer is written.
 //
 // Refine: the LLM proposes a spec. The last spec that checked out goes on the
-// answer as a bijlage, not in the text.
+// answer as a bijlage, not in the text. REFINE_PROTOCOL says how the LLM
+// gets to a spec: "plan", it fills a JSON plan that the service compiles
+// (plan/propose.js), or "tools", it writes the Turtle itself and calls tools
+// (llm/loop.js).
 //
 // Execute: the last spec bijlage in the conversation is the agreed spec; it
 // goes straight to the runner. The answer is fixed text; nothing is retried
-// and no spec is rewritten. The caller writes the report's description right
-// before the run, so execution holds no LLM call.
+// and no spec is rewritten. The report's description is written by code from
+// the spec, so execution holds no LLM call.
 //
 // A saved spec can also run again outside the chat, for the report spec tab:
 // prepareSpec reads and checks it, runSavedSpec runs it.
 import { uuid } from 'mu';
 import { ask } from './llm/loop.js';
+import { propose } from './plan/propose.js';
+import { buildCatalogue } from './plan/catalogue.js';
 import { parseSpec } from './runner/spec.js';
 import { checkSpec } from './runner/check.js';
 import { runReport } from './runner/run.js';
+import { describeSpec, listValueUris } from './runner/render.js';
+import { fetchLabels } from './llm/explore.js';
 import { storeSpecFile, readSpecFile, writeShareFile, registerFile, registerReport,
          registerReportSpec, SPEC_MEDIA_TYPE, RESULT_TYPE } from './chat.js';
+
+const REFINE_PROTOCOL = process.env.REFINE_PROTOCOL || 'plan';
+if (!['plan', 'tools'].includes(REFINE_PROTOCOL)) {
+  throw new Error(`REFINE_PROTOCOL is "${REFINE_PROTOCOL}". It must be "plan" or "tools".`);
+}
 
 const TEXT = {
   executed: 'Het rapport is uitgevoerd. De bijlagen staan erbij.',
@@ -26,12 +38,19 @@ const TEXT = {
   noAnswer: 'Er kwam geen antwoord. Probeer het opnieuw.',
 };
 
-// One refine turn: the LLM answers, and the spec it validated is stored and
-// attached to that answer as a bijlage. An empty answer (a reasoning model
-// can end with no text) gets a fixed text and no spec: only a spec the user
-// saw explained may run.
+// What can be checked about the profiles when the service starts, beyond
+// what loading them checks: with plans, every entity and field needs a name
+// of its own. Throws when a profile does not fit.
+export function checkProfiles(profiles) {
+  if (REFINE_PROTOCOL === 'plan') buildCatalogue(profiles);
+}
+
+// One refine turn: the LLM answers, and the spec that checked out is stored
+// and attached to that answer as a bijlage. An empty answer (a reasoning
+// model can end with no text) gets a fixed text and no spec: only a spec the
+// user saw explained may run.
 export async function refineSpec(turns, profiles) {
-  const { text, spec } = await ask(turns, profiles);
+  const { text, spec } = REFINE_PROTOCOL === 'plan' ? await propose(turns, profiles) : await ask(turns, profiles);
   if (!text.trim()) return { text: TEXT.noAnswer };
   const attachments = spec ? [await storeSpecFile(spec)] : [];
   return { text: text.trim(), attachments };
@@ -67,17 +86,25 @@ export function prepareExecution(history, profiles) {
   return { spec, attachment };
 }
 
-// Runs a prepared spec as the user and records its ReportSpec and report.
-// The description comes from the caller, which writes it from the
-// conversation right before this call: execution never talks to the LLM and
-// never sees report data. The spec bijlage the user agreed to goes on this
-// answer too, and the ReportSpec points at it, so the spec can run again
-// later. A failed run throws; the route then writes its failure text.
-export async function executeSpec({ spec, attachment }, conversation, profiles, description) {
+// Runs a prepared spec as the user and records its ReportSpec and report,
+// with a description of the spec (writeDescription). Execution never talks
+// to the LLM. The spec bijlage the user agreed to goes on this answer too,
+// and the ReportSpec points at it, so the spec can run again later. A failed
+// run throws; the route then writes its failure text.
+export async function executeSpec({ spec, attachment }, conversation, profiles) {
+  const description = await writeDescription(spec, profiles);
   const csvFile = await runSpec(spec, profiles);
   const specUri = await registerReportSpec(spec.title, description, conversation.uri, attachment.uri);
   await registerReport(spec.title, csvFile, description, specUri);
   return { text: TEXT.executed, attachments: [csvFile, attachment.uri] };
+}
+
+// The dct:description of a report: what the spec lists and filters, in
+// Dutch, written by code from the spec. The filter values show by name; the
+// names are read under the service scope, like the code lists.
+async function writeDescription(spec, profiles) {
+  const labels = await fetchLabels(listValueUris(spec));
+  return describeSpec(spec, profiles.get(spec.profileUri), uri => labels.get(uri));
 }
 
 // Runs a saved spec again as the user, outside the chat, and records a new

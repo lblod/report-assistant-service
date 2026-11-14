@@ -2,10 +2,11 @@
 
 A chat assistant. The user asks for a report in Dutch and gets a CSV.
 
-The user asks for a report. An LLM writes a report spec and explains it in
-Dutch. The user confirms. The service checks the spec and runs it as the
-user. The LLM does not write SPARQL. The LLM does not see the data of the
-report.
+The user asks for a report. An LLM says what the report needs: which rows,
+which filters, which columns. The service turns that into a report spec and
+explains the spec in Dutch. The user confirms. The service checks the spec
+and runs it as the user. The LLM does not write SPARQL. The LLM does not see
+the data of the report.
 
 Work in progress, POC phase. Scheduled reports stay in
 `loket-report-generation-service`.
@@ -48,8 +49,10 @@ The service needs two things from the app:
   kinds of things, their fields and the links between them. The service has
   no vocabulary of its own. It only knows the profiles. The tutorial below
   writes one.
-- An LLM. Any OpenAI-compatible endpoint with tool calls. Set
-  `LLM_BASE_URL`, `LLM_MODEL` and `LLM_API_KEY`.
+- An LLM. Any OpenAI-compatible endpoint. Set `LLM_BASE_URL`, `LLM_MODEL`
+  and `LLM_API_KEY`. A small model will do: it fills a plan with names from
+  the profiles, and the service does the rest (see [Plan](#plan)). Tool
+  calls are only needed with `REFINE_PROTOCOL=tools`.
 
 The app also needs the chat resources in mu-cl-resources, the agent that
 signs the answers (`CHAT_ASSISTANT_URI`) and the two bijlage types (see
@@ -68,14 +71,17 @@ needs to:
 - write files (`nfo:FileDataObject`) and reports (`reporting:Report`);
 - read and write the chat (`sioc:Thread`, `sioc:Post`, `sioct:InstantMessage`).
 
-There is one exception. While the LLM writes a spec, it reads code lists and
-the names of linked entities (a bestuurseenheid, a persoon) to suggest filter
-values. These reads do not run as the user. They run with the scope of the
-service, `http://services.semantic.works/report-assistant`
-(`SERVICE_SCOPE`). Grant that scope read access to the graph with the code
-lists and the names. If the scope can not read a code list or an entity, the
-LLM sees it as "(not readable)" and filters on the name text instead. With
-sparql-parser:
+There is one exception. To turn the names in a question into filter values,
+the service reads code lists and the names of linked entities (a soort
+bestuur, a bestuurseenheid). These reads do not run as the user. They run
+with the scope of the service,
+`http://services.semantic.works/report-assistant` (`SERVICE_SCOPE`). Grant
+that scope read access to the graph with the code lists and the names. A
+name the scope can not read is not lost: the filter then tests the name as
+text where the report runs (see [Plan](#plan)). With `REFINE_PROTOCOL=tools`
+the LLM sees a list the scope can not read as "(not readable)". The
+description of a report names its filter values; those names are read with
+the same scope. With sparql-parser:
 
 ```lisp
 (with-scope "http://services.semantic.works/report-assistant"
@@ -159,8 +165,9 @@ We add a small profile and run one report on it.
    If a profile is broken, the service stops and the log names the file.
 
 3. Open the chat and ask `Geef alle gemeenten met hun naam.` The assistant
-   explains what the report will list and adds the spec as a bijlage
-   (`specificatie-<uuid>.ttl`). The spec looks like this:
+   lists what the report will show and filter, and adds the spec as a
+   bijlage (`specificatie-<uuid>.ttl`). The file has full URIs; with
+   prefixes the spec looks like this:
 
    ```turtle
    <http://data.lblod.info/id/report-specs/gemeenten> a rep:ReportSpec , sh:NodeShape ;
@@ -181,14 +188,21 @@ We add a small profile and run one report on it.
 First the LLM decides if the user said "run it". This gives one of two
 modes.
 
-- Refine. The LLM reads the profiles and writes a spec, or changes the
-  current one. The service checks the spec against its profile. The LLM
-  fixes what the check reports. The answer explains the spec in Dutch and
-  has the spec as bijlage. Nothing runs.
+- Refine. The LLM gets the profiles as a catalogue of names and fills a
+  plan: a profile, an entity, filters and columns (see [Plan](#plan)). The
+  service compiles the plan to a spec and checks the spec against its
+  profile. If the plan has mistakes, the LLM gets all of them in one message
+  and tries again, twice at most. The answer lists what the spec does. The
+  service writes that text from the spec; the LLM does not. The spec is the
+  bijlage. Nothing runs.
+
+  With `REFINE_PROTOCOL=tools` the LLM writes the spec in Turtle itself. It
+  calls tools to check the spec and to look up values, and it writes the
+  explanation.
 - Execute. The service takes the last spec bijlage of the conversation and
-  checks it again. Right before the run, one LLM call writes the
-  `dct:description` of the report. It uses the conversation for this. It
-  does not see the report data. The service runs the spec as the user,
+  checks it again. It writes the `dct:description` of the report from the
+  spec: what a row is, the filters and the columns, in the names of the
+  profile. No LLM is called. The service runs the spec as the user,
   writes the CSV to the share and records a `reporting:Report` and a
   `reporting:ReportSpec`. The report links to the spec with
   `dct:conformsTo`. The answer is a fixed text with the CSV and the spec as
@@ -200,8 +214,10 @@ spec that pass its filters. It fetches each column for those rows. It pairs
 the values and writes the CSV. A large report takes minutes.
 
 The LLM gets no report data: no rows, no counts, no errors of the run. It
-gets the conversation, the profiles, the check messages, the specs, the code
-lists and the names it looks up for a filter.
+gets the conversation, the names in the profiles, the names of the short
+code lists, its own plan and what is wrong with it. With
+`REFINE_PROTOCOL=tools` it gets the conversation, the profiles, the check
+messages, the specs, the code lists and the names it looks up for a filter.
 
 ## Reference
 
@@ -212,6 +228,9 @@ lists and the names it looks up for a filter.
 | `LLM_BASE_URL` | | OpenAI-compatible endpoint, for example `http://openai-compatible-endpoint.example/v1`. If not set, every turn answers with a failure text. |
 | `LLM_MODEL` | | for example `glm-5.2` |
 | `LLM_API_KEY` | | bearer token. Not needed for a local Ollama. |
+| `REFINE_PROTOCOL` | `plan` | how the LLM gets to a spec. `plan`: it fills a JSON plan and the service compiles it. `tools`: it writes the spec in Turtle and calls tools. That needs a model that is good at tool calls. |
+| `PLAN_JSON_MODE` | `true` | with `plan`: ask the provider for a JSON object (`response_format`). Set it to `false` for a provider that refuses that field. |
+| `PLAN_TEMPERATURE` | `0` | with `plan`: the temperature of the call. Set it to an empty value to leave the field out, for a model that only takes its default. |
 | `PROFILE_DIR` | `/config/profiles` | folder with the profiles, one `.ttl` file each |
 | `SHARE_DIR` | `/share` | where CSVs and specs are written |
 | `SERVICE_SCOPE` | `http://services.semantic.works/report-assistant` | scope of the reads of the LLM: code lists and names of linked entities |
@@ -220,10 +239,11 @@ lists and the names it looks up for a filter.
 | `CSV_SEPARATOR` | `;` | CSV column separator |
 | `ROW_LIMIT` | `200000` | a report with more rows fails. A report is never cut. |
 | `MAX_PATH_DEPTH` | `8` | longest path in a spec |
-| `INLINE_VALUES_MAX` | `50` | code lists and linked entities up to this size are shown to the LLM in full, with URIs. Bigger ones show as "(many)". Ones the service can not read show as "(not readable)". |
+| `INLINE_VALUES_MAX` | `50` | with `tools`: code lists and linked entities up to this size are shown to the LLM in full, with URIs. Bigger ones show as "(many)". Ones the service can not read show as "(not readable)". |
 | `SUBJECT_CHUNK_SIZE` | `100` | rows per column query. Lower it if the database refuses long queries. |
-| `LLM_RETRIES` | `3` | retries of an LLM call that fails on the network (no connection, a reset, no answer) or with a 500, 502, 503 or 504. Other failures are not retried. |
-| `LLM_RETRY_DELAY` | `2000` | ms before the first retry. Each next retry waits twice as long. |
+| `LLM_TIMEOUT` | `120000` | ms an LLM call may take, answer included. After that the call is cut off and counts as a failure on the network. |
+| `LLM_RETRIES` | `3` | retries of an LLM call that fails on the network (no connection, a reset, no answer within `LLM_TIMEOUT`) or with a 429, 500, 502, 503 or 504. Other failures are not retried. |
+| `LLM_RETRY_DELAY` | `2000` | ms before the first retry. Each next retry waits twice as long. A 429 with a `Retry-After` header waits at least that long, at most one minute. |
 | `LOG_LLM` | `false` | log every LLM request and response to stdout |
 | `LOG_SINK_URL` | | if set, every LLM exchange is also POSTed to this sink so app-http-logger can record it. See above. |
 
@@ -293,13 +313,19 @@ profile. The profile is not used to check the data.
 | `sh:targetClass` | the `rdf:type` of the entity |
 | `sh:property` + `sh:path` | a field: one step, a predicate or `[ sh:inversePath p ]` |
 | `sh:name` | the name of the field in the menu |
+| `sh:description` on a field or an entity | a hint for the LLM, shown after the name. On an entity, say how to point at one of them: "wijs één bestuurseenheid aan met soort bestuur + naam". Not used with `REFINE_PROTOCOL=tools`. |
 | `sh:datatype` | a value field. A column may end here. |
 | `sh:class` | a code-list field. A column may end here. Short lists show in the menu in full, with URIs. |
 | `sh:node` | a link to another entity. If the entity has few instances (a code), it shows in the menu in full, with URIs. A filter on a link tests the URI. |
 | `sh:or ( [ sh:node A ] [ sh:node B ] )` | a link that reaches A or B |
 
-The service ignores `sh:description`, cardinality and field paths of more
-than one step.
+The service ignores cardinality and field paths of more than one step.
+
+In a plan the LLM names an entity by the last part of its URI
+(`ent:Mandataris` is `Mandataris`) and a field by its `sh:name`. So within a
+profile the last parts of the entity URIs must differ, and so must the field
+names of one entity. If they do not, the service stops at boot and says
+which name is double.
 
 If one step can reach entities of different kinds, write one field with
 `sh:or`. Do not write two fields on one path:
@@ -309,10 +335,97 @@ sh:property [ sh:path [ sh:inversePath besluit:bestuurt ] ; sh:name "bestuursorg
               sh:or ( [ sh:node ent:Bestuursorgaan ] [ sh:node ent:LeidinggevendBestuursorgaan ] ) ] .
 ```
 
+### Plan
+
+With `REFINE_PROTOCOL=plan` the LLM does not write a spec. It fills a plan:
+one JSON object with names from the profiles.
+
+```json
+{
+  "profile": "Mandaten",
+  "entity": "Mandataris",
+  "title": "Schepenen van Aalst gestart in 2024",
+  "filters": [
+    { "path": ["bekleedt mandaat", "bestuursfunctie"], "is": "Schepen" },
+    { "path": ["start"], "from": "2024-01-01", "to": "2024-12-31" },
+    { "path": ["bekleedt mandaat", "zit in bestuursorgaan", "is tijdspecialisatie van", "bestuurt"],
+      "is": { "soort bestuur": "Gemeente", "naam": "Aalst" } }
+  ],
+  "columns": [
+    { "label": "achternaam", "path": ["persoon", "achternaam"] },
+    { "label": "startdatum", "path": ["start"] }
+  ]
+}
+```
+
+A path is a list of field names, from the row entity. The service compiles
+the plan to a spec (see [Spec](#spec)). The validator checks that spec like
+any other. A question the service can not answer (count, sort, top-N) comes
+back as `{ "cannot": "..." }`, and that sentence is the answer.
+
+A filter has a path and one test:
+
+| In the plan | It means | In the spec |
+|---|---|---|
+| `"is": "name"` | the path ends on exactly this | on a value: the whole value, case does not matter (`sh:pattern "^(name)$"`, `sh:flags "i"`). On a link: see below. |
+| `"is": { "field": "value", ... }` | the path ends on one thing that has all of these | the first field is the filter, the others are `rep:where` on it |
+| `"is_one_of": [ ... ]` | the path ends on one of these | `sh:in`, or one `sh:pattern` |
+| `"contains": "text"` | the text is in the value, case does not matter | `sh:pattern` with the text escaped. On a link it tests the name. |
+| `"from"`, `"to"` | a range of days or of whole numbers, both ends included | `sh:minInclusive`, `sh:maxInclusive` |
+| `"exists": true` / `false` | the path leads somewhere / nowhere | `sh:minCount 1` / `sh:maxCount 0` |
+| `"none": { test }` | nothing on the path passes the test | the test with `sh:maxCount 0` |
+
+A column has a label and a path:
+
+| In the plan | It means |
+|---|---|
+| `"path": []` | the URI of the row itself |
+| a path that ends on a link | the name of what the link reaches |
+| `"collect": "join"` (+ `"separator"`) | all values in one cell |
+| `"collect": "min"` / `"max"` | the lowest or highest date or number |
+| `"only_where": { filter }` | keep only the values for which the filter holds (`rep:where`) |
+
+#### Names on a link
+
+`"is": "Schepen"` on a link is a name. The service looks it up in what the
+service scope reads. If the name is there, the filter tests the link with
+the URI. If it is not there, it depends on what the link leads to:
+
+- A code list: an entity with a name and no links, whose names the service
+  read in full. The name is a mistake. The LLM gets the names of the list
+  back.
+- Anything else, for example a bestuurseenheid. The service reads only some
+  of them, so the name is no mistake. The filter tests the whole name, case
+  does not matter, where the report runs. The answer tells the user that
+  the name could not be checked.
+
+So "de gemeente Dilbeek" becomes: soort bestuur is Gemeente, and the name of
+the same bestuurseenheid is Dilbeek. It does not become: every eenheid with
+Dilbeek in its name.
+
+#### What the service does on its own
+
+The service only helps where the profile leaves no doubt:
+
+- It fills in one link the LLM left out, if that link is the only way to the
+  next step.
+- It skips a step that names the entity the path already stands on.
+- Two filters on different fields of the same linked thing test the same
+  thing: the second becomes a `rep:where` on the first.
+- A filter that is in the plan twice counts once.
+
+Any other mistake goes back to the LLM, all mistakes of a plan in one
+message.
+
+The spec file of a plan starts with a comment line that holds the plan
+(`# plan: {...}`). In the next turn the LLM gets that plan back to change.
+The spec under that line is what runs.
+
 ### Spec
 
-The LLM writes one spec per question. A spec has two halves: which rows,
-and what the CSV shows for each row.
+There is one spec per question: the service compiles it from the plan, or
+the LLM writes it (`REFINE_PROTOCOL=tools`). A spec has two halves: which
+rows, and what the CSV shows for each row.
 
 ```turtle
 <http://data.lblod.info/id/report-specs/burgemeesters> a rep:ReportSpec , sh:NodeShape ;
@@ -340,6 +453,7 @@ One row per mandataris with the role Burgemeester who started on or after
 | You write | It means |
 |---|---|
 | `rep:ReportSpec` + `sh:NodeShape` | this is a spec |
+| `dct:title` | the title of the report. Required: it names the report, its spec and the CSV file. |
 | `rep:profile` | the profile the spec uses |
 | `sh:targetClass` | one row per subject of this class |
 | `rep:entity` | which entity, if several share the class |
@@ -382,6 +496,10 @@ values are paired by those nodes: the first name and the last name of one
 mayor stay on one row. Where paths split and both sides have several values,
 every combination becomes a row. A missing value is an empty cell. Identical
 rows show once.
+
+The rows follow the URI of their subject. The rows of one subject and the
+values in a joined cell follow the text of their values. So the same data
+gives the same CSV, whatever order the database answers in.
 
 ## Advanced topics
 
@@ -470,7 +588,24 @@ SHACL reading, a person who also has a second mandate would drop out. The
 ### Limits
 
 No counting, no sorting, no top-N, no comparing two subjects. One class per
-report. Filter suggestions read only what the service scope may read.
+report. Filter suggestions read only what the service scope may read. A plan
+can not express everything a spec can: no `rep:anyOf`, no regex of its own,
+no `sh:minCount 2`, and a number in `from` or `to` is a whole number.
+
+## Development
+
+### Tests
+
+```sh
+npm ci
+npm test
+```
+
+The tests run under plain Node (20 or newer), without a stack. The `mu`
+module only exists inside the mu-javascript-template image, so the tests load
+a stand-in for it (`test/support/mu.mjs`). The stand-in records the SPARQL
+the service sends and returns what the test scripts. No test reaches a
+database or an LLM.
 
 ## Discussion
 
@@ -487,3 +622,19 @@ The LLM could write SPARQL directly. This we didn't do, becauuse:
 - SPARQL can do too much to check it. A spec only says rows, filters and columns, so all of it can be checked.
 
 This doesn't come for free of course.
+
+### Why the LLM fills a plan and does not write the spec
+
+The first version let the LLM write the spec in Turtle and check it with
+tool calls. That works with a strong model. A small model gets lost in the
+Turtle, the URIs and the rounds of tool calls. We want small models to work,
+and whatever model the provider gives us next.
+
+- A plan asks less: names from a list, in one JSON object, in one call.
+- All the mistakes of a plan come back at once, in the words of the profile.
+- The service decides what a name means, the same way every time.
+- The user agrees to a text the service wrote from the spec. So the text
+  can not say something else than the spec does.
+
+The tool loop is still there (`REFINE_PROTOCOL=tools`). It can write specs a
+plan can not express.

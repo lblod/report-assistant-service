@@ -9,7 +9,9 @@ import { countSharedSteps } from './spec.js';
 // dropped row. sh:groupConcat, sh:min and sh:max fold a column into one cell
 // per node it shares with the other columns. rep:self takes the subject
 // URI. Subjects in the order the seed query gave them (ORDER BY ?s);
-// identical rows appear once.
+// identical rows appear once. The rows of one subject and the values in a
+// folded cell follow the text of their values, not the order the database
+// answered in: the same data always gives the same CSV.
 
 const SH = 'http://www.w3.org/ns/shacl#';
 const XSD = 'http://www.w3.org/2001/XMLSchema#';
@@ -84,7 +86,8 @@ function addChain(found, branches, chain) {
 function buildRowsAt(branch, found, tree, columns) {
   let rows = [new Map(branch.ends.map(i => [i, found.term.value]))];
   for (const next of branch.next.values()) {
-    const nodes = [...(found.below.get(next)?.values() || [])];
+    const nodes = [...(found.below.get(next)?.values() || [])]
+      .sort((a, b) => compareText(a.term.value, b.term.value));
     let below;
     if (next.columns.every(i => FOLDING.includes(columns[i].collect))) {
       below = [fold(next, nodes, tree, columns)];
@@ -105,13 +108,20 @@ function fold(branch, nodes, tree, columns) {
   for (const i of branch.columns) {
     const rest = tree.paths[i].slice(tree.paths[i].indexOf(branch) + 1);
     const terms = nodes.flatMap(node => collectTermsBelow(node, rest));
-    const unique = [...new Map(terms.map(t => [t.value, t])).values()];
+    const unique = [...new Map(terms.map(t => [t.value, t])).values()]
+      .sort((a, b) => compareText(a.value, b.value));
     const col = columns[i];
     cells.set(i, col.collect === SH + 'groupConcat'
       ? unique.map(t => t.value).join(col.separator ?? ',')
       : pickExtreme(unique, col, col.collect === SH + 'min' ? 'min' : 'max'));
   }
   return cells;
+}
+
+// Two texts in code unit order: the same on every machine, whatever its
+// locale.
+function compareText(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 // The values at the end of a column's remaining steps under one node: what

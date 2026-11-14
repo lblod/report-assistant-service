@@ -20,12 +20,16 @@ const LOG_LLM = /^(true|1)$/i.test(process.env.LOG_LLM || '');
 // records it (the sink of the app). The provider call itself is TLS, which
 // the logger cannot read.
 const LOG_SINK_URL = process.env.LOG_SINK_URL;
-// A call that fails on the network or with a status in RETRY_STATUS is tried
-// again LLM_RETRIES times. The first retry waits LLM_RETRY_DELAY ms, every
-// next one twice as long. Any other failure is thrown at once.
+// A call that fails on the network, gets no answer within LLM_TIMEOUT ms or
+// answers with a status in RETRY_STATUS is tried again LLM_RETRIES times.
+// The first retry waits LLM_RETRY_DELAY ms, every next one twice as long. A
+// 429 that names a Retry-After waits at least that long, RETRY_AFTER_MAX ms
+// at most. Any other failure is thrown at once.
 const LLM_RETRIES = Number(process.env.LLM_RETRIES || 3);
 const LLM_RETRY_DELAY = Number(process.env.LLM_RETRY_DELAY || 2000);
-const RETRY_STATUS = [500, 502, 503, 504];
+const LLM_TIMEOUT = Number(process.env.LLM_TIMEOUT || 120000);
+const RETRY_STATUS = [429, 500, 502, 503, 504];
+const RETRY_AFTER_MAX = 60000;
 
 const REFINE_PROMPT = `You refine report specs with the user. You never write SPARQL and you never run a report.
 
@@ -119,7 +123,7 @@ export async function ask(turns, profiles) {
   let spec = null;
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    const message = await callLlm(messages, TOOLS);
+    const message = await callLlm(messages, { tools: TOOLS });
     messages.push(message);
     const calls = message.tool_calls || [];
     if (!calls.length) return { text: message.content || '', spec };
@@ -218,9 +222,11 @@ function addCurrentSpec(messages, current) {
 }
 
 // The one place that talks to the provider. Without tools it is a plain
-// completion (the mode check and the report description). Returns the
-// model's message.
-export async function callLlm(messages, tools = null) {
+// completion (the mode check, the report plan). extra holds fields that go
+// into the request as they are, for example response_format. Returns the
+// model's message, its content as text (see readContent), with the reason
+// the model stopped as finishReason.
+export async function callLlm(messages, { tools = null, extra = {} } = {}) {
   // Send only the fields every provider accepts back. Attachments never go
   // out.
   const wire = messages.map(m => {
@@ -235,7 +241,7 @@ export async function callLlm(messages, tools = null) {
     if (m.role === 'tool' && m.tool_call_id) out.tool_call_id = m.tool_call_id;
     return out;
   });
-  const body = { model: LLM_MODEL, messages: wire };
+  const body = { model: LLM_MODEL, messages: wire, ...extra };
   if (tools) body.tools = tools;
   if (LOG_LLM) {
     console.log(`[llm] POST ${LLM_BASE_URL}/chat/completions request:\n${
@@ -254,7 +260,24 @@ export async function callLlm(messages, tools = null) {
     console.log(`[llm] response:\n${JSON.stringify(data, null, 2)}`);
   }
   if (LOG_SINK_URL) copyToSink(body, data);
-  return data.choices[0].message;
+  const choice = data?.choices?.[0];
+  if (!choice?.message) throw new Error('the LLM answered without a message');
+  const { message } = choice;
+  return {
+    ...message,
+    content: Array.isArray(message.content) ? readContent(message.content) : message.content,
+    finishReason: choice.finish_reason ?? null,
+  };
+}
+
+// The answer text of a content that came as a list of parts. Most providers
+// send the content as a string. Some send a list, for example Mistral for a
+// reasoning model: [{ type: 'thinking', ... }, { type: 'text', text }]. Only
+// the text parts are the answer; the thinking is not.
+export function readContent(parts) {
+  return parts
+    .map(part => (typeof part === 'string' ? part : part?.type === 'text' ? String(part.text ?? '') : ''))
+    .join('');
 }
 
 // A copy of one exchange to the app's log sink: the body as it went to the
@@ -269,11 +292,13 @@ function copyToSink(request, response) {
   }).catch(e => console.error('[llm] could not copy the exchange to the sink:', e.message));
 }
 
-// POST to the provider, with retries. A network error or a status in
-// RETRY_STATUS waits and tries again; the last failure is thrown.
+// POST to the provider, with retries. A network error, no answer within
+// LLM_TIMEOUT or a status in RETRY_STATUS waits and tries again; the last
+// failure is thrown. The time limit covers the whole call, the body
+// included: without it a silent provider holds a turn for minutes.
 async function postWithRetry(body) {
   for (let attempt = 0; ; attempt++) {
-    let res;
+    let res, text;
     try {
       res = await fetch(`${LLM_BASE_URL}/chat/completions`, {
         method: 'POST',
@@ -282,25 +307,38 @@ async function postWithRetry(body) {
           ...(LLM_API_KEY ? { Authorization: `Bearer ${LLM_API_KEY}` } : {}),
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(LLM_TIMEOUT),
       });
+      if (res.ok) return await res.json();
+      text = await res.text();
     } catch (e) {
-      // No connection, a reset or no answer at all: always worth another try.
+      // No connection, a reset, no answer in time or a body that broke off:
+      // always worth another try.
       if (attempt >= LLM_RETRIES) throw e;
-      await pause(attempt, `${e.message}${e.cause?.code ? ` (${e.cause.code})` : ''}`);
+      await pause(attempt, e.name === 'TimeoutError' ? `no answer within ${LLM_TIMEOUT} ms`
+        : `${e.message}${e.cause?.code ? ` (${e.cause.code})` : ''}`);
       continue;
     }
-    if (res.ok) return res.json();
-    const t = await res.text();
     if (!RETRY_STATUS.includes(res.status) || attempt >= LLM_RETRIES) {
-      throw new Error(`LLM ${res.status}: ${t.slice(0, 300)}`);
+      throw new Error(`LLM ${res.status}: ${text.slice(0, 300)}`);
     }
-    await pause(attempt, `LLM ${res.status}`);
+    await pause(attempt, `LLM ${res.status}`, readRetryAfter(res));
   }
 }
 
-// Waits before the next try: LLM_RETRY_DELAY, doubled on every attempt.
-async function pause(attempt, reason) {
-  const wait = LLM_RETRY_DELAY * 2 ** attempt;
+// How long a 429 asks to wait, in ms: its Retry-After header, in seconds or
+// as a date. 0 when there is none; never more than RETRY_AFTER_MAX.
+function readRetryAfter(res) {
+  const value = res.headers.get('retry-after');
+  if (!value) return 0;
+  const ms = Number.isFinite(Number(value)) ? Number(value) * 1000 : Date.parse(value) - Date.now();
+  return ms > 0 ? Math.min(ms, RETRY_AFTER_MAX) : 0;
+}
+
+// Waits before the next try: LLM_RETRY_DELAY, doubled on every attempt, or
+// atLeast when that is longer.
+async function pause(attempt, reason, atLeast = 0) {
+  const wait = Math.max(LLM_RETRY_DELAY * 2 ** attempt, atLeast);
   console.log(`[llm] ${reason}; retry ${attempt + 1}/${LLM_RETRIES} in ${Math.round(wait / 1000)}s`);
   await new Promise(resolve => setTimeout(resolve, wait));
 }
