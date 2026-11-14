@@ -341,6 +341,7 @@ One row per mandataris with the role Burgemeester who started on or after
 | You write | It means |
 |---|---|
 | `rep:ReportSpec` + `sh:NodeShape` | this is a spec |
+| `dct:title` | the title of the report. Required: it names the report, its spec and the CSV file. |
 | `rep:profile` | the profile the spec uses |
 | `sh:targetClass` | one row per subject of this class |
 | `rep:entity` | which entity, if several share the class |

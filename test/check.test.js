@@ -44,3 +44,10 @@ test('checkSpec: a column ends on a value, a filter needs a condition, a spec ne
     sh:property [ sh:path mandaat:start ] ; rep:columns ( ${NAME} )`)), /filter 1 .* has no condition/);
   assert.match(check(mandatenSpec('sh:targetClass mandaat:Mandataris')), /no columns/);
 });
+
+test('checkSpec: a spec without a title is refused, so it cannot run and then fail', () => {
+  const body = `sh:targetClass mandaat:Mandataris ; rep:columns ( ${NAME} )`;
+  assert.match(check(mandatenSpec(body, { title: null })), /no dct:title/);
+  assert.match(check(mandatenSpec(body, { title: '  ' })), /no dct:title/);
+  assert.equal(check(mandatenSpec(body, { title: 'Mandatarissen' })), null);
+});

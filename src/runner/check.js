@@ -50,6 +50,13 @@ function checkStartEntity(spec, profile) {
   return `<${spec.targetClass}> is the class of ${matches.length} entities: ${names}. Add rep:entity <...> to say which one.`;
 }
 
+// The title names the report, its ReportSpec and the CSV file. Without one
+// the run would only fail at the end, when the report is recorded.
+function checkTitle(spec) {
+  if (!spec.title?.trim()) return 'no dct:title. Add dct:title "..." with a short Dutch title: it names the report.';
+  return null;
+}
+
 // The entity names of a profile, for error messages.
 function listShapes(profile) {
   return profile.shapes.map(s => s.label || s.targetClass).join(', ');
@@ -334,6 +341,7 @@ function parsesAsDate(value, withTime) {
 // start shape.
 const CHECKS = [
   checkStartEntity,
+  checkTitle,
   checkColumnsPresent,
   checkColumnLabel,
   checkColumnLabelsUnique,
