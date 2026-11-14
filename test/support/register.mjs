@@ -15,3 +15,4 @@ process.env.SHARE_DIR = mkdtempSync(join(tmpdir(), 'report-assistant-test-'));
 process.env.LLM_BASE_URL = 'http://llm.test/v1';
 process.env.LLM_MODEL = 'test-model';
 process.env.LLM_RETRY_DELAY = '1';
+process.env.LLM_TIMEOUT = '50';

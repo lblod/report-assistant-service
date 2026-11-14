@@ -222,8 +222,9 @@ lists and the names it looks up for a filter.
 | `MAX_PATH_DEPTH` | `8` | longest path in a spec |
 | `INLINE_VALUES_MAX` | `50` | code lists and linked entities up to this size are shown to the LLM in full, with URIs. Bigger ones show as "(many)". Ones the service can not read show as "(not readable)". |
 | `SUBJECT_CHUNK_SIZE` | `100` | rows per column query. Lower it if the database refuses long queries. |
-| `LLM_RETRIES` | `3` | retries of an LLM call that fails on the network (no connection, a reset, no answer) or with a 500, 502, 503 or 504. Other failures are not retried. |
-| `LLM_RETRY_DELAY` | `2000` | ms before the first retry. Each next retry waits twice as long. |
+| `LLM_TIMEOUT` | `120000` | ms an LLM call may take, answer included. After that the call is cut off and counts as a failure on the network. |
+| `LLM_RETRIES` | `3` | retries of an LLM call that fails on the network (no connection, a reset, no answer within `LLM_TIMEOUT`) or with a 429, 500, 502, 503 or 504. Other failures are not retried. |
+| `LLM_RETRY_DELAY` | `2000` | ms before the first retry. Each next retry waits twice as long. A 429 with a `Retry-After` header waits at least that long, at most one minute. |
 | `LOG_LLM` | `false` | log every LLM request and response to stdout |
 | `LOG_SINK_URL` | | if set, every LLM exchange is also POSTed to this sink so app-http-logger can record it. See above. |
 

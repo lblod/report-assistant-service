@@ -32,6 +32,46 @@ test('callLlm: an answer without a message fails with a sentence that says so', 
   await assert.rejects(callLlm(QUESTION), /the LLM answered without a message/);
 });
 
+test('callLlm: a 429 is tried again and waits as long as Retry-After asks', async () => {
+  const requests = scriptLlm([{ status: 429, body: { message: 'rate limit' }, headers: { 'retry-after': '0.05' } }, completion('ok')]);
+  const started = Date.now();
+
+  assert.equal((await callLlm(QUESTION)).content, 'ok');
+
+  assert.equal(requests.length, 2);
+  assert.ok(Date.now() - started >= 45, 'waited for the Retry-After of the 429');
+});
+
+test('callLlm: gives up after LLM_RETRIES retries; a 400 is not tried again', async () => {
+  const always429 = scriptLlm(Array(4).fill({ status: 429, body: { message: 'rate limit' } }));
+  await assert.rejects(callLlm(QUESTION), /LLM 429: .*rate limit/);
+  assert.equal(always429.length, 4, 'the first call and three retries');
+
+  const badRequest = scriptLlm([{ status: 400, body: { message: 'unknown model' } }]);
+  await assert.rejects(callLlm(QUESTION), /LLM 400: .*unknown model/);
+  assert.equal(badRequest.length, 1);
+});
+
+test('callLlm: a provider that does not answer within LLM_TIMEOUT is cut off and tried again', async () => {
+  // never answers: ends only when the service aborts the call. The interval
+  // stands for the open connection, which keeps Node alive meanwhile.
+  const silent = (url, init) => new Promise((resolve, reject) => {
+    const connection = setInterval(() => {}, 10);
+    init.signal.addEventListener('abort', () => {
+      clearInterval(connection);
+      reject(init.signal.reason);
+    });
+  });
+
+  const requests = scriptLlm([silent, completion('toch nog')]);
+  assert.equal((await callLlm(QUESTION)).content, 'toch nog');
+  assert.equal(requests.length, 2);
+
+  const never = scriptLlm([silent, silent, silent, silent]);
+  await assert.rejects(callLlm(QUESTION), { name: 'TimeoutError' });
+  assert.equal(never.length, 4);
+});
+
 test('wantsExecution: reads "true" from a list of parts, never from the thinking', async () => {
   const turns = [...QUESTION, { role: 'assistant', content: 'Voorstel ...' }, { role: 'user', content: 'voer uit' }];
 
