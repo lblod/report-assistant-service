@@ -51,3 +51,21 @@ test('parseSpec: Turtle without a spec, or with two, is refused', () => {
   assert.throws(() => parseSpec(two), /one spec per answer/);
   assert.throws(() => parseSpec('this is not Turtle'));
 });
+
+test('parseSpec: a list that loops is refused instead of read without end', () => {
+  const column = '[ sh:path rep:self ; rdfs:label "mandataris" ]';
+  const ownTail = `${mandatenSpec('sh:targetClass mandaat:Mandataris ; rep:columns _:list')}
+    _:list rdf:first ${column} ; rdf:rest _:list .`;
+  assert.throws(() => parseSpec(ownTail), /RDF list is broken: it loops/);
+
+  const viaSecond = `${mandatenSpec('sh:targetClass mandaat:Mandataris ; rep:columns _:a')}
+    _:a rdf:first ${column} ; rdf:rest _:b .
+    _:b rdf:first ${column} ; rdf:rest _:a .`;
+  assert.throws(() => parseSpec(viaSecond), /RDF list is broken: it loops/);
+
+  const inFilter = mandatenSpec(`sh:targetClass mandaat:Mandataris ;
+    sh:property [ sh:path mandaat:status ; sh:in _:values ] ;
+    rep:columns ( ${column} )`) + `
+    _:values rdf:first <http://example.org/effectief> ; rdf:rest _:values .`;
+  assert.throws(() => parseSpec(inFilter), /RDF list is broken: it loops/);
+});

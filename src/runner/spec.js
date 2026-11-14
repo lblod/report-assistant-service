@@ -148,11 +148,15 @@ function readConstraints(store, p) {
 }
 
 // The items of an RDF list, in order. A list item without rdf:first is
-// broken Turtle: refuse it rather than drop items.
+// broken Turtle: refuse it rather than drop items. A list whose rdf:rest
+// leads back into the list would never end: refuse that too.
 export function readRdfList(store, node) {
   const items = [];
+  const seen = new Set();
   let cur = node;
   while (cur && cur.value !== RDF + 'nil') {
+    if (seen.has(cur.id)) throw new Error('RDF list is broken: it loops');
+    seen.add(cur.id);
     const item = store.getQuads(cur, RDF + 'first', null)[0]?.object;
     if (!item) throw new Error('RDF list is broken');
     items.push(item);
