@@ -130,12 +130,15 @@ export async function ask(turns, profiles) {
       }
       // validate_spec hands back the spec when it checks out; that spec
       // becomes the bijlage of the answer.
-      // One answer carries one spec: say so when this one replaces another.
+      // One answer carries one spec: say so when this one replaces another,
+      // or when a rejected one leaves an earlier accepted spec in place.
       if (call.function.name === 'validate_spec' && result.spec) {
         if (spec && spec !== result.spec) {
           result.content += '\nThis spec replaces the one you validated before. Your answer carries only this one.';
         }
         spec = result.spec;
+      } else if (call.function.name === 'validate_spec' && spec) {
+        result.content += '\nThe spec you validated before is still the one the user gets. Explain that one, or fix this one and validate again.';
       }
       messages.push({ role: 'tool', tool_call_id: call.id, content: result.content });
     }
