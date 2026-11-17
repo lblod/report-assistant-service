@@ -106,8 +106,8 @@ Reply to the user in Dutch. Earlier turns are context only. Answer the last one.
 // attachments }], newest last. Sends it to the model and runs the tools the
 // model asks for, until it answers in text or MAX_ROUNDS runs out. The model
 // may only propose a spec it validated, hence the tool rounds. Returns the
-// answer text and the last spec validate_spec accepted in this turn, or
-// null.
+// answer text and the last spec validate_spec accepted in this turn, or null
+// when there is none or the rounds ran out.
 export async function ask(turns, profiles) {
   const current = findCurrentSpec(turns);
   const messages = [{ role: 'system', content: await buildSystemPrompt(current, profiles) },
@@ -140,7 +140,8 @@ export async function ask(turns, profiles) {
       messages.push({ role: 'tool', tool_call_id: call.id, content: result.content });
     }
   }
-  return { text: 'Sorry, dit rapport is te moeilijk. Contacteer de developers.', spec };
+  // The model never explained a spec in this turn, so none goes on the answer.
+  return { text: 'Sorry, dit rapport is te moeilijk. Contacteer de developers.', spec: null };
 }
 
 // The history carries the spec as a bijlage, never as text. Paste one hint
