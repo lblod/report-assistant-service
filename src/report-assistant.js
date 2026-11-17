@@ -12,7 +12,7 @@ import { parseSpec } from './runner/spec.js';
 import { checkSpec } from './runner/check.js';
 import { runReport } from './runner/run.js';
 import { storeSpecFile, readSpecFile, writeShareFile, registerFile, registerReport,
-         RESULT_TYPE } from './chat.js';
+         SPEC_MEDIA_TYPE, RESULT_TYPE } from './chat.js';
 
 const TEXT = {
   noAnswer: 'Er kwam geen antwoord. Probeer het opnieuw.',

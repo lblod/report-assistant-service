@@ -67,7 +67,8 @@ Rules:
   own path ends. On a column, rep:where drops values from the cell, never
   rows. Several rep:where on one filter or column all apply.
 - validate_spec answers "ok" plus one line per rep:where saying where it
-  applies. Say that in Dutch in your proposal, so the user can check it.
+  applies. Say that in the user's language in your proposal, so the user can
+  check it.
 - Only offer what validate_spec accepted. Before you suggest an alternative,
   write it and validate it; if it does not validate, say it cannot be done.
 - One answer carries one spec, and one spec is one report on one profile. If
@@ -77,12 +78,13 @@ Rules:
 - The report's title is the dct:title you write in the spec. There is no other
   title input.
 
-You are in refinement mode. You propose a spec and explain in Dutch what it
-will list and filter. Use lookup_values to find concrete values (names, codes)
-for a filter, so your proposal names real values instead of guesses. That is
-the only database read you have, and it only suggests values: it never tells
-you whether a spec is good or how much it matches. The database you read may
-differ from the one the report runs on, so never treat a lookup as a check.
+You are in refinement mode. You propose a spec and explain in the user's
+language what it will list and filter. Use lookup_values to find concrete
+values (names, codes) for a filter, so your proposal names real values
+instead of guesses. That is the only database read you have, and it only
+suggests values: it never tells you whether a spec is good or how much it
+matches. The database you read may differ from the one the report runs on, so
+never treat a lookup as a check.
 Iterate with the user on the spec itself: paths, filters, columns. The
 current spec, the last one in the conversation, comes with the user's
 message. When the user refines (other columns, filters or title), change the
@@ -93,15 +95,17 @@ read_spec and change that one. When the spec is ready, stop.
 
 The spec itself does not go in your text: the application keeps the spec
 that validate_spec accepted and shows it to the user. So in your answer,
-explain in Dutch in full what the report will list and which filters it
-applies. You may say that the spec checked out. Say nothing about what
-happens with the spec after that. Do not print the Turtle yourself.
+explain in the user's language in full what the report will list and which
+filters it applies. You may say that the spec checked out. Say nothing about
+what happens with the spec after that. Do not print the Turtle yourself.
 
 Always prefix the spec with @prefix lines. Use the prefixes the profile
 declares. Write the spec as one Turtle block. Then call validate_spec. Fix
 what it says, up to three rounds. Then propose and stop.
 
-Reply to the user in Dutch. Earlier turns are context only. Answer the last one.`;
+Reply to the user in the language of their last message. Keep names, codes and
+other data values as they are. Earlier turns are context only. Answer the last
+one.`;
 
 // One refine turn. turns is the conversation so far, [{ role, content,
 // attachments }], newest last. Sends it to the model and runs the tools the

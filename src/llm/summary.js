@@ -1,15 +1,16 @@
 // A report's dct:description, written when the user saves a spec. The LLM
 // reads only the conversation that agreed the report, never report data: one
-// short Dutch sentence, at most MAX_LENGTH characters. It stays outside the
-// run, so it can move to another service later.
+// short sentence in the user's language, at most MAX_LENGTH characters. It
+// stays outside the run, so it can move to another service later.
 
 import { callLlm } from './loop.js';
 
 const MAX_LENGTH = 300;
 
 const DESCRIPTION_PROMPT = `You write the description of a report for a list of reports.
-The conversation below agreed the report. Write one plain Dutch sentence that
-says what the report lists and which filters it applies. Use at most 300
+The conversation below agreed the report. Write one plain sentence in the
+language of the user's last message that says what the report lists and which
+filters it applies. Keep names and codes as they are. Use at most 300
 characters. No markdown, no quotes, no title, no line breaks. Reply with the
 description only.`;
 

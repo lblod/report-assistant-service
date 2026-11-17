@@ -168,10 +168,10 @@ export async function registerReportSpec(title, description, conversationUri, sp
 }
 
 // The report of one run, pointing at the logical file of its CSV, so it
-// shows up in the reports list. The description is the short Dutch text
-// written from the conversation. The report conforms to its ReportSpec
-// (dct:conformsTo); a spec that runs again gets one report per run. Its
-// source (prov:wasAttributedTo) is the assistant agent, also on a re-run.
+// shows up in the reports list. The description is the short text in the
+// user's language, written from the conversation. The report conforms to its
+// ReportSpec (dct:conformsTo); a spec that runs again gets one report per run.
+// Its source (prov:wasAttributedTo) is the assistant agent, also on a re-run.
 export async function registerReport(title, fileUri, description, specUri) {
   const id = uuid();
   const descriptionLine = description

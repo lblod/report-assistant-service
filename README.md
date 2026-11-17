@@ -1,12 +1,12 @@
 # report-assistant-service
 
-A chat assistant. The user asks for a report in Dutch. The assistant
-proposes a report spec. The user saves the spec and runs it. The report
-shows up in the reports list as a CSV.
+A chat assistant. The user asks for a report. The assistant proposes a report
+spec. The user saves the spec and runs it. The report shows up in the reports
+list as a CSV.
 
-The user asks for a report. An LLM writes a report spec and explains it in
-Dutch. The service checks the spec. The user saves it and runs it as the
-user. The LLM does not write SPARQL. The LLM does not see the data of the
+The user asks for a report. An LLM writes a report spec and explains it in the
+user's language. The service checks the spec. The user saves it and runs it as
+the user. The LLM does not write SPARQL. The LLM does not see the data of the
 report.
 
 Work in progress, POC phase. Scheduled reports stay in
@@ -184,7 +184,7 @@ We add a small profile and run one report on it.
 A chat turn is always a refine turn. The LLM reads the profiles and writes a
 spec, or changes the current one. The service checks the spec against its
 profile. The LLM fixes what the check reports. The answer explains the spec
-in Dutch and has the spec as bijlage. Nothing runs.
+in the user's language and has the spec as bijlage. Nothing runs.
 
 The user saves a spec bijlage with `POST /assistant/report-specs`. That
 writes a `reporting:ReportSpec`, so the spec shows up in the spec list.
@@ -289,8 +289,8 @@ spec stay too, with their CSV; they only lose the link to the spec. Answers
 | `sioc:Thread` | a conversation, made by the frontend |
 | `sioc:Post`, `sioct:InstantMessage` | a message: `sioc:content`, `foaf:maker`, `as:attachment` to its bijlagen |
 | `nfo:FileDataObject` | a bijlage; `dct:type` says spec or executed report |
-| `reporting:Report` | one per run, from `POST /assistant/report-specs/:id/run`. Has `dct:title`, a Dutch `dct:description` of at most 300 characters, `prov:generated` to the CSV, `dct:conformsTo` to its spec, and `prov:wasAttributedTo` to the assistant agent (`CHAT_ASSISTANT_URI`), also on a re-run |
-| `reporting:ReportSpec` | the spec the user saved from a conversation. Has `dct:title`, a Dutch `dct:description` of at most 300 characters, `dct:created`, `dct:isPartOf` to its conversation, `prov:generated` to its Turtle file (the spec bijlage), and `prov:wasAttributedTo` to the assistant agent. The reports link to the spec. The spec does not link to its reports. |
+| `reporting:Report` | one per run, from `POST /assistant/report-specs/:id/run`. Has `dct:title`, a `dct:description` of at most 300 characters in the user's language, `prov:generated` to the CSV, `dct:conformsTo` to its spec, and `prov:wasAttributedTo` to the assistant agent (`CHAT_ASSISTANT_URI`), also on a re-run |
+| `reporting:ReportSpec` | the spec the user saved from a conversation. Has `dct:title`, a `dct:description` of at most 300 characters in the user's language, `dct:created`, `dct:isPartOf` to its conversation, `prov:generated` to its Turtle file (the spec bijlage), and `prov:wasAttributedTo` to the assistant agent. The reports link to the spec. The spec does not link to its reports. |
 
 The two bijlage types:
 
