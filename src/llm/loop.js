@@ -27,7 +27,7 @@ const LLM_RETRIES = Number(process.env.LLM_RETRIES || 3);
 const LLM_RETRY_DELAY = Number(process.env.LLM_RETRY_DELAY || 2000);
 const RETRY_STATUS = [500, 502, 503, 504];
 
-const REFINE_PROMPT = `You refine report specs with the user. You never write SPARQL and you never run a report.
+const REFINE_PROMPT = `You refine report specs with the user. You never write SPARQL.
 
 The profile lists what can be asked. Compose paths by chaining fields. The
 profiles are listed at the end of this prompt. When there is a current spec,
@@ -88,17 +88,13 @@ message. When the user refines (other columns, filters or title), change the
 current spec. When the user asks for a different report, one that lists
 another kind of thing per row, start a new spec. Older specs show only as a
 bijlage name. Only when the user asks for an older spec, open it with
-read_spec and change that one. Never call run_report; there is no such tool
-here. When the spec is ready, ask the user
-to confirm execution. Then stop.
+read_spec and change that one. When the spec is ready, stop.
 
-The spec itself does not go in your text. validate_spec stores a spec that
-checks out as an attachment ("bijlage", a spec file) on your answer. So in
-your answer: explain in Dutch in full what the report will list and which
-filters it applies, tell the user the actual spec is in the bijlage and to
-look there, and ask the user to confirm execution. Do not print the Turtle
-yourself; the bijlage shows the validated version, so never rewrite it in
-the text either.
+The spec itself does not go in your text: the application keeps the spec
+that validate_spec accepted and shows it to the user. So in your answer,
+explain in Dutch in full what the report will list and which filters it
+applies. You may say that the spec checked out. Say nothing about what
+happens with the spec after that. Do not print the Turtle yourself.
 
 Always prefix the spec with @prefix lines. Use the prefixes the profile
 declares. Write the spec as one Turtle block. Then call validate_spec. Fix
