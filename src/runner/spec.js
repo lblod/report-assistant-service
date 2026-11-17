@@ -37,7 +37,7 @@ export function parseSpec(turtle) {
   const columnsQuad = one(specNode, REP + 'columns');
   const columns = columnsQuad ? readRdfList(store, columnsQuad).map(col => parseColumn(store, col)) : [];
 
-  return { uri: specNode.value, title, profileUri, targetClass, entity, filters, columns };
+  return { title, profileUri, targetClass, entity, filters, columns };
 }
 
 // One filter: its path, its constraints and its rep:where conditions.
@@ -161,7 +161,7 @@ export function readRdfList(store, node) {
   return items;
 }
 
-// An N3 term as a plain { type, value, datatype, language }, the shape the
+// An N3 term as a plain { type, value, datatype }, the shape the
 // query builders and check.js work on.
 function toTerm(object) {
   if (object.termType === 'NamedNode') return { type: 'uri', value: object.value };
@@ -169,6 +169,5 @@ function toTerm(object) {
     type: 'literal',
     value: object.value,
     datatype: object.datatype ? object.datatype.value : null,
-    language: object.language || null,
   };
 }

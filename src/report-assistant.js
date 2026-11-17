@@ -14,9 +14,7 @@ import { runReport } from './runner/run.js';
 import { storeSpecFile, readSpecFile, writeShareFile, registerFile, registerReport,
          SPEC_MEDIA_TYPE, RESULT_TYPE } from './chat.js';
 
-const TEXT = {
-  noAnswer: 'Er kwam geen antwoord. Probeer het opnieuw.',
-};
+const NO_ANSWER = 'Er kwam geen antwoord. Probeer het opnieuw.';
 
 // One refine turn: the LLM answers, and the spec it validated is stored and
 // attached to that answer as a bijlage. An empty answer (a reasoning model
@@ -24,7 +22,7 @@ const TEXT = {
 // saw explained may run.
 export async function refineSpec(turns, profiles) {
   const { text, spec } = await ask(turns, profiles);
-  if (!text.trim()) return { text: TEXT.noAnswer };
+  if (!text.trim()) return { text: NO_ANSWER };
   const attachments = spec ? [await storeSpecFile(spec)] : [];
   return { text: text.trim(), attachments };
 }

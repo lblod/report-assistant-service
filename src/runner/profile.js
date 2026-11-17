@@ -126,7 +126,7 @@ export function findStartShape(profile, spec) {
 }
 
 // The entity with this URI, or null.
-export function findShape(profile, shapeUri) {
+function findShape(profile, shapeUri) {
   return profile.shapes.find(s => s.uri === shapeUri) || null;
 }
 

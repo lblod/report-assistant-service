@@ -31,7 +31,7 @@ export const CHAT_ASSISTANT_URI = process.env.CHAT_ASSISTANT_URI || 'http://data
 export const SPEC_MEDIA_TYPE = 'text/turtle';
 // The bijlage types. Match the add-chat-attachment-types-codelist migration
 // in the portal.
-export const SPEC_TYPE = 'http://lblod.data.gift/concepts/6693014e-7b7d-448c-bb24-80c9758521f3';
+const SPEC_TYPE = 'http://lblod.data.gift/concepts/6693014e-7b7d-448c-bb24-80c9758521f3';
 export const RESULT_TYPE = 'http://lblod.data.gift/concepts/28d97698-e219-4a92-bdbd-7ab367a7524e';
 // Every spec file is called like this. readSpecFile opens nothing else, so
 // the LLM can never read a CSV or any other file on the share.
@@ -142,7 +142,7 @@ export async function writeMessage({ conversationUri, content, maker, attachment
   return id;
 }
 
-// The ReportSpec of a run in the chat: the report's title, description and
+// The ReportSpec the user saved from a chat: the report's title, description and
 // creation time, dct:isPartOf its conversation and prov:generated its
 // Turtle file (the spec bijlage). The CSV belongs to the report, which
 // links here with dct:conformsTo. The Turtle file is what the spec tab
@@ -310,8 +310,9 @@ export async function registerFile(shareName, format, type, name = shareName) {
 // Deletes the conversation, its messages, its report specs and the bijlagen
 // no report needs (the spec files: the logical file, the physical one under
 // it and the share file). The reports stay, with their CSV: they are
-// results, listed under Reports. The CSV of a chat run is a bijlage of the
-// answer, so a bijlage a report generated is skipped. A kept report's
+// results, listed under Reports. An older conversation, from when a report
+// ran in the chat, has the CSV as a bijlage of the answer, so a bijlage a
+// report generated is skipped. A kept report's
 // dct:conformsTo then points at a deleted spec. Returns how many share files
 // it removed. It runs as the caller, so the auth layer keeps a user to their
 // own conversation.

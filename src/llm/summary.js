@@ -16,8 +16,8 @@ description only.`;
 
 // One description, or the title when the model returns no text. Only
 // `content` counts: reasoning_content and the like are the model's thinking,
-// not a description for the reports list. A failing call throws: the report
-// is not registered without its description.
+// not a description for the reports list. A failing call throws: the caller
+// then saves the spec without a description.
 export async function describeReport(turns, title) {
   const transcript = turns
     .filter(t => t.content && t.content.trim())
