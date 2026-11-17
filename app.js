@@ -2,7 +2,8 @@ import { app, errorHandler } from 'mu';
 import bodyParser from 'body-parser';
 import { loadProfiles } from './src/runner/profile.js';
 import { readConversation, readHistory, writeMessage, deleteConversation, readReportSpec,
-         registerReportSpec, findReportSpecOfFile, CHAT_ASSISTANT_URI } from './src/chat.js';
+         registerReportSpec, findReportSpecOfFile, deleteReportSpec,
+         CHAT_ASSISTANT_URI } from './src/chat.js';
 import { describeReport } from './src/llm/summary.js';
 import { refineSpec, prepareSpec, findSpecAttachment,
          runSavedSpec } from './src/report-assistant.js';
@@ -158,6 +159,23 @@ app.post('/assistant/report-specs/:id/run', async function(req, res, next) {
     console.log(`[reports] ran report spec ${req.params.id}`);
   } catch (e) {
     console.error(`[reports] run of report spec ${req.params.id} failed:`, e);
+  }
+});
+
+// Delete a saved report spec. The spec file and the reports stay: the file is
+// a bijlage of the chat, and a report only loses its link to the spec. The
+// read is the access check: the caller's session decides what exists, so
+// another user's spec is a 404.
+app.delete('/assistant/report-specs/:id', async function(req, res, next) {
+  try {
+    const reportSpec = await readReportSpec(req.params.id);
+    if (!reportSpec) return res.status(404).json({ error: 'no such report spec' });
+    await deleteReportSpec(reportSpec.uri);
+    console.log(`[reports] deleted report spec ${req.params.id}`);
+    res.status(204).send();
+  } catch (e) {
+    console.error('[reports] could not delete the report spec:', e);
+    next(e);
   }
 });
 

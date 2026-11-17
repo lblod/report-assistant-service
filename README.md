@@ -266,6 +266,13 @@ Answers `404` if the user can not read the spec. Answers `422` if its Turtle
 file is gone or does not check out anymore. If the run fails, it is only
 logged.
 
+#### DELETE /assistant/report-specs/:id
+
+Deletes a saved `reporting:ReportSpec`. The spec file stays: it is a bijlage
+of the chat, and the user can save it again there. The reports made with the
+spec stay too, with their CSV; they only lose the link to the spec. Answers
+`204`. Answers `404` if the user can not read the spec.
+
 ### Data model
 
 | Prefix | URI |

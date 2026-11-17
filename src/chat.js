@@ -229,6 +229,25 @@ export async function findReportSpecOfFile(fileUri) {
   return result.results.bindings[0]?.id.value || null;
 }
 
+// Removes a ReportSpec and the links of its reports to it. The spec file
+// stays, it is a bijlage of the chat; the reports and their CSVs stay too.
+// Two plain updates, to keep each one simple for sparql-parser.
+export async function deleteReportSpec(specUri) {
+  const spec = sparqlEscapeUri(specUri);
+  await update(`${PREFIXES}
+    DELETE {
+      ?report dct:conformsTo ${spec} .
+    } WHERE {
+      ?report dct:conformsTo ${spec} .
+    }`, { scope: WRITE_SCOPE });
+  await update(`
+    DELETE {
+      ${spec} ?p ?o .
+    } WHERE {
+      ${spec} ?p ?o .
+    }`, { scope: WRITE_SCOPE });
+}
+
 // Writes a file to the share folder, where the file service serves it
 // from.
 export function writeShareFile(fileName, content) {
