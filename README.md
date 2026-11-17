@@ -243,6 +243,16 @@ of later runs of its specs stay too; their `dct:conformsTo` then points to a
 deleted spec. Answers `204`. Answers `404` if the user can not read the
 conversation.
 
+#### POST /assistant/report-specs
+
+Body `{ "conversation": "<uuid>", "spec": "<uri of a spec bijlage of that conversation>" }`.
+Saves the spec bijlage as a `reporting:ReportSpec`, so it shows up in the spec
+list and can run with `POST /assistant/report-specs/:id/run`. Answers `400`
+without both fields. Answers `404` if the user can not read the conversation
+or the spec is not a bijlage of it. Answers `422` if the spec file is gone or
+does not check out anymore. Answers `201` with `{ "id": "<uuid>" }`. A spec
+that is already saved answers `200` with the id it has. Nothing runs here.
+
 #### POST /assistant/report-specs/:id/run
 
 No body. Runs a saved `reporting:ReportSpec` again, outside the chat, as the

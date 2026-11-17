@@ -147,7 +147,7 @@ export async function writeMessage({ conversationUri, content, maker, attachment
 // Turtle file (the spec bijlage). The CSV belongs to the report, which
 // links here with dct:conformsTo. The Turtle file is what the spec tab
 // downloads and what runs again later, outside the chat. Its source
-// (prov:wasAttributedTo) is the assistant agent. Returns the spec uri.
+// (prov:wasAttributedTo) is the assistant agent. Returns the spec's id and uri.
 export async function registerReportSpec(title, description, conversationUri, specFileUri) {
   const id = uuid();
   const spec = `${REPORT_SPEC_BASE}${id}`;
@@ -164,7 +164,7 @@ export async function registerReportSpec(title, description, conversationUri, sp
         dct:isPartOf ${sparqlEscapeUri(conversationUri)} ;
         prov:generated ${sparqlEscapeUri(specFileUri)} .
     }`, { scope: WRITE_SCOPE });
-  return spec;
+  return { id, uri: spec };
 }
 
 // The report of one run, pointing at the logical file of its CSV, so it
@@ -215,6 +215,18 @@ export async function readReportSpec(id) {
     description: binding.description?.value,
     specFileName: binding.specFileName?.value,
   };
+}
+
+// The uuid of the ReportSpec saved for this spec file, or null. A spec
+// file is saved at most once; the read runs as the caller.
+export async function findReportSpecOfFile(fileUri) {
+  const result = await query(`${PREFIXES}
+    SELECT ?id WHERE {
+      ?spec a ${sparqlEscapeUri(REPORT_SPEC_CLASS)} ;
+        mu:uuid ?id ;
+        prov:generated ${sparqlEscapeUri(fileUri)} .
+    } LIMIT 1`);
+  return result.results.bindings[0]?.id.value || null;
 }
 
 // Writes a file to the share folder, where the file service serves it

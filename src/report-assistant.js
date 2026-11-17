@@ -75,7 +75,7 @@ export function prepareExecution(history, profiles) {
 // later. A failed run throws; the route then writes its failure text.
 export async function executeSpec({ spec, attachment }, conversation, profiles, description) {
   const csvFile = await runSpec(spec, profiles);
-  const specUri = await registerReportSpec(spec.title, description, conversation.uri, attachment.uri);
+  const { uri: specUri } = await registerReportSpec(spec.title, description, conversation.uri, attachment.uri);
   await registerReport(spec.title, csvFile, description, specUri);
   return { text: TEXT.executed, attachments: [csvFile, attachment.uri] };
 }
@@ -103,6 +103,13 @@ async function runSpec(spec, profiles) {
 function findLastSpecAttachment(history) {
   return history.flatMap(message => message.attachments)
     .filter(a => a.mediaType === SPEC_MEDIA_TYPE).at(-1) || null;
+}
+
+// The spec bijlage with this uri in the history, or null. A save names its
+// spec by uri; only a spec attached to a message of the conversation counts.
+export function findSpecAttachment(history, uri) {
+  return history.flatMap(message => message.attachments)
+    .find(a => a.mediaType === SPEC_MEDIA_TYPE && a.uri === uri) || null;
 }
 
 // A file name from a title. Falls back to "report".

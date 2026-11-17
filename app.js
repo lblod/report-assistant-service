@@ -1,10 +1,12 @@
 import { app, errorHandler } from 'mu';
 import bodyParser from 'body-parser';
 import { loadProfiles } from './src/runner/profile.js';
-import { readConversation, readHistory, writeMessage, deleteConversation, readReportSpec, CHAT_ASSISTANT_URI } from './src/chat.js';
+import { readConversation, readHistory, writeMessage, deleteConversation, readReportSpec,
+         registerReportSpec, findReportSpecOfFile, CHAT_ASSISTANT_URI } from './src/chat.js';
 import { wantsExecution } from './src/llm/mode.js';
 import { describeReport } from './src/llm/summary.js';
-import { prepareExecution, executeSpec, refineSpec, prepareSpec, runSavedSpec } from './src/report-assistant.js';
+import { prepareExecution, executeSpec, refineSpec, prepareSpec, findSpecAttachment,
+         runSavedSpec } from './src/report-assistant.js';
 
 const PROFILE_DIR = process.env.PROFILE_DIR || '/config/profiles';
 const TITLE_LENGTH = 80;
@@ -88,6 +90,55 @@ app.delete('/assistant/conversations/:id', async function(req, res, next) {
     res.status(204).send();
   } catch (e) {
     console.error('[chat] could not delete the conversation:', e);
+    next(e);
+  }
+});
+
+// Save a spec bijlage of a conversation as a ReportSpec, so it shows up in
+// the spec list and can run with POST /assistant/report-specs/:id/run. Body
+// { conversation: <uuid>, spec: <uri of a spec bijlage of that conversation> }.
+// 400 without both fields, 404 when the caller cannot read the conversation
+// or the spec is not a bijlage of it, 422 when the spec file is gone or no
+// longer checks out. 201 with { id }, the uuid of the new ReportSpec; a spec
+// that is already saved answers 200 with the id it has. The lookup in the
+// history is the check that a caller can only save a spec of their own
+// conversation. Nothing runs here.
+app.post('/assistant/report-specs', bodyParser.json(), async function(req, res, next) {
+  const conversationId = String(req.body?.conversation ?? '').trim();
+  const specUri = String(req.body?.spec ?? '').trim();
+  if (!conversationId || !specUri) {
+    return res.status(400).json({ error: 'conversation and spec are required' });
+  }
+
+  try {
+    // the access check: the caller's session decides what is readable
+    const conversation = await readConversation(conversationId);
+    if (!conversation) return res.status(404).json({ error: 'no such conversation' });
+    const history = await readHistory(conversation.uri);
+    const attachment = findSpecAttachment(history, specUri);
+    if (!attachment) return res.status(404).json({ error: 'no such spec in this conversation' });
+
+    const saved = await findReportSpecOfFile(attachment.uri);
+    if (saved) return res.status(200).json({ id: saved });
+
+    const prepared = prepareSpec(attachment.name, profiles);
+    if (prepared.error) {
+      console.error(`[reports] spec ${specUri} cannot be saved: ${prepared.error}`);
+      return res.status(422).json({ error: prepared.error });
+    }
+
+    // the description is nice to have: a failing LLM call must not block the save
+    let description;
+    try {
+      description = await describeReport(history, prepared.spec.title || conversation.title);
+    } catch (e) {
+      console.error(`[reports] no description for spec ${specUri}:`, e);
+    }
+    const { id } = await registerReportSpec(prepared.spec.title, description, conversation.uri, attachment.uri);
+    console.log(`[reports] saved spec ${specUri} as report spec ${id}`);
+    res.status(201).json({ id });
+  } catch (e) {
+    console.error('[reports] could not save the spec:', e);
     next(e);
   }
 });
