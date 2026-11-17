@@ -1,9 +1,11 @@
 # report-assistant-service
 
-A chat assistant. The user asks for a report in Dutch and gets a CSV.
+A chat assistant. The user asks for a report in Dutch. The assistant
+proposes a report spec. The user saves the spec and runs it. The report
+shows up in the reports list as a CSV.
 
 The user asks for a report. An LLM writes a report spec and explains it in
-Dutch. The user confirms. The service checks the spec and runs it as the
+Dutch. The service checks the spec. The user saves it and runs it as the
 user. The LLM does not write SPARQL. The LLM does not see the data of the
 report.
 
@@ -172,28 +174,28 @@ We add a small profile and run one report on it.
      rep:columns ( [ sh:path skos:prefLabel ; rdfs:label "naam" ] ) .
    ```
 
-4. Ask for changes (`Voeg ook de URI toe.`) or confirm (`Voer het uit.`). On
-   confirm, the service runs the last spec and answers with the CSV and the
-   spec as bijlagen.
+4. Ask for changes (`Voeg ook de URI toe.`). When the spec is right, save it
+   with the button under the attachment. It then shows up in
+   "Rapportspecificaties". Run it there or from the chat. The report shows up
+   in the reports list.
 
 ## How it works
 
-First the LLM decides if the user said "run it". This gives one of two
-modes.
+A chat turn is always a refine turn. The LLM reads the profiles and writes a
+spec, or changes the current one. The service checks the spec against its
+profile. The LLM fixes what the check reports. The answer explains the spec
+in Dutch and has the spec as bijlage. Nothing runs.
 
-- Refine. The LLM reads the profiles and writes a spec, or changes the
-  current one. The service checks the spec against its profile. The LLM
-  fixes what the check reports. The answer explains the spec in Dutch and
-  has the spec as bijlage. Nothing runs.
-- Execute. The service takes the last spec bijlage of the conversation and
-  checks it again. Right before the run, one LLM call writes the
-  `dct:description` of the report. It uses the conversation for this. It
-  does not see the report data. The service runs the spec as the user,
-  writes the CSV to the share and records a `reporting:Report` and a
-  `reporting:ReportSpec`. The report links to the spec with
-  `dct:conformsTo`. The answer is a fixed text with the CSV and the spec as
-  bijlagen. If there is no spec, if the spec does not check out anymore, or
-  if the run fails, the answer is a fixed failure text.
+The user saves a spec bijlage with `POST /assistant/report-specs`. That
+writes a `reporting:ReportSpec`, so the spec shows up in the spec list.
+Right before the save, one LLM call writes the `dct:description`. It uses
+the conversation for this. It does not see report data. If the call fails,
+the spec is saved without a description.
+
+A saved spec runs with `POST /assistant/report-specs/:id/run`. The service
+checks the spec again, runs it as the user, writes the CSV to the share and
+records a `reporting:Report` that conforms to the spec. The report shows up
+in the reports list. No LLM decides whether a report runs.
 
 A run has three steps. It finds the rows: the subjects of the class of the
 spec that pass its filters. It fetches each column for those rows. It pairs
@@ -280,8 +282,8 @@ logged.
 | `sioc:Thread` | a conversation, made by the frontend |
 | `sioc:Post`, `sioct:InstantMessage` | a message: `sioc:content`, `foaf:maker`, `as:attachment` to its bijlagen |
 | `nfo:FileDataObject` | a bijlage; `dct:type` says spec or executed report |
-| `reporting:Report` | one per run, in the chat or from `POST /assistant/report-specs/:id/run`. Has `dct:title`, a Dutch `dct:description` of at most 300 characters, `prov:generated` to the CSV, `dct:conformsTo` to its spec, and `prov:wasAttributedTo` to the assistant agent (`CHAT_ASSISTANT_URI`), also on a re-run |
-| `reporting:ReportSpec` | the spec of one run in the chat. Has the same title, description and creation time, `dct:isPartOf` to its conversation, `prov:generated` to its Turtle file (the spec bijlage), and `prov:wasAttributedTo` to the assistant agent. The reports link to the spec. The spec does not link to its reports. |
+| `reporting:Report` | one per run, from `POST /assistant/report-specs/:id/run`. Has `dct:title`, a Dutch `dct:description` of at most 300 characters, `prov:generated` to the CSV, `dct:conformsTo` to its spec, and `prov:wasAttributedTo` to the assistant agent (`CHAT_ASSISTANT_URI`), also on a re-run |
+| `reporting:ReportSpec` | the spec the user saved from a conversation. Has `dct:title`, a Dutch `dct:description` of at most 300 characters, `dct:created`, `dct:isPartOf` to its conversation, `prov:generated` to its Turtle file (the spec bijlage), and `prov:wasAttributedTo` to the assistant agent. The reports link to the spec. The spec does not link to its reports. |
 
 The two bijlage types:
 

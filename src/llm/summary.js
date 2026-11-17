@@ -1,7 +1,7 @@
-// A report's dct:description, written right before the report runs. The LLM
+// A report's dct:description, written when the user saves a spec. The LLM
 // reads only the conversation that agreed the report, never report data: one
 // short Dutch sentence, at most MAX_LENGTH characters. It stays outside the
-// execution, so it can move to another service later.
+// run, so it can move to another service later.
 
 import { callLlm } from './loop.js';
 

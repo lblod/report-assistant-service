@@ -1,28 +1,20 @@
-// The two answers to a chat turn, as { text, attachments }. Every bijlage
-// exists before the answer is written.
+// The answer to a chat turn, as { text, attachments }. Every bijlage exists
+// before the answer is written.
 //
-// Refine: the LLM proposes a spec. The last spec that checked out goes on the
-// answer as a bijlage, not in the text.
+// The LLM proposes a spec. The last spec that checked out goes on the answer
+// as a bijlage, not in the text. Nothing runs in the chat.
 //
-// Execute: the last spec bijlage in the conversation is the agreed spec; it
-// goes straight to the runner. The answer is fixed text; nothing is retried
-// and no spec is rewritten. The caller writes the report's description right
-// before the run, so execution holds no LLM call.
-//
-// A saved spec can also run again outside the chat, for the report spec tab:
-// prepareSpec reads and checks it, runSavedSpec runs it.
+// The user saves a spec as a report spec. A saved spec runs outside the
+// chat, with no LLM: prepareSpec reads and checks it, runSavedSpec runs it.
 import { uuid } from 'mu';
 import { ask } from './llm/loop.js';
 import { parseSpec } from './runner/spec.js';
 import { checkSpec } from './runner/check.js';
 import { runReport } from './runner/run.js';
 import { storeSpecFile, readSpecFile, writeShareFile, registerFile, registerReport,
-         registerReportSpec, SPEC_MEDIA_TYPE, RESULT_TYPE } from './chat.js';
+         RESULT_TYPE } from './chat.js';
 
 const TEXT = {
-  executed: 'Het rapport is uitgevoerd. De bijlagen staan erbij.',
-  noSpec: 'Er is nog geen voorstel om uit te voeren. Beschrijf eerst welk rapport je wilt.',
-  invalid: 'Het voorstel is niet meer geldig. Vraag een nieuw voorstel.',
   noAnswer: 'Er kwam geen antwoord. Probeer het opnieuw.',
 };
 
@@ -53,33 +45,6 @@ export function prepareSpec(fileName, profiles) {
   return error ? { error } : { spec };
 }
 
-// The agreed spec of the conversation, the last spec bijlage, prepared. A
-// failure is fixed text with no spec: only a spec the user saw explained may
-// run.
-export function prepareExecution(history, profiles) {
-  const attachment = findLastSpecAttachment(history);
-  if (!attachment) return { text: TEXT.noSpec };
-  const { spec, error } = prepareSpec(attachment.name, profiles);
-  if (error) {
-    console.error(`[reports] the agreed spec cannot run: ${error}`);
-    return { text: TEXT.invalid };
-  }
-  return { spec, attachment };
-}
-
-// Runs a prepared spec as the user and records its ReportSpec and report.
-// The description comes from the caller, which writes it from the
-// conversation right before this call: execution never talks to the LLM and
-// never sees report data. The spec bijlage the user agreed to goes on this
-// answer too, and the ReportSpec points at it, so the spec can run again
-// later. A failed run throws; the route then writes its failure text.
-export async function executeSpec({ spec, attachment }, conversation, profiles, description) {
-  const csvFile = await runSpec(spec, profiles);
-  const { uri: specUri } = await registerReportSpec(spec.title, description, conversation.uri, attachment.uri);
-  await registerReport(spec.title, csvFile, description, specUri);
-  return { text: TEXT.executed, attachments: [csvFile, attachment.uri] };
-}
-
 // Runs a saved spec again as the user, outside the chat, and records a new
 // report that conforms to the same ReportSpec. No LLM: the new report keeps
 // the ReportSpec's description. Throws when the run fails.
@@ -96,13 +61,6 @@ async function runSpec(spec, profiles) {
   const shareName = `${uuid()}.csv`;
   writeShareFile(shareName, await runReport(spec, profiles.get(spec.profileUri)));
   return registerFile(shareName, 'text/csv', RESULT_TYPE, `${slugify(spec.title)}.csv`);
-}
-
-// The newest spec bijlage in the history, or null. The agreed spec is the
-// last one the user saw.
-function findLastSpecAttachment(history) {
-  return history.flatMap(message => message.attachments)
-    .filter(a => a.mediaType === SPEC_MEDIA_TYPE).at(-1) || null;
 }
 
 // The spec bijlage with this uri in the history, or null. A save names its

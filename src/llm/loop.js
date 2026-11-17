@@ -1,8 +1,9 @@
 // The refine loop. The LLM proposes a spec, may look up code-list values and
 // iterates with the user. It never runs a report and never learns what a
-// spec would match: the user confirms, and execution runs the agreed spec
-// without the LLM. It talks to an OpenAI-compatible /chat/completions with
-// tool calls and no provider SDK, so any such endpoint works.
+// spec would match: the user saves and runs a spec in the application, and
+// the run goes without the LLM. It talks to an OpenAI-compatible
+// /chat/completions with tool calls and no provider SDK, so any such
+// endpoint works.
 
 import { TOOLS, runTool } from './tools.js';
 import { describeProfile } from './describe.js';
@@ -218,8 +219,7 @@ function addCurrentSpec(messages, current) {
 }
 
 // The one place that talks to the provider. Without tools it is a plain
-// completion (the mode check and the report description). Returns the
-// model's message.
+// completion (the report description). Returns the model's message.
 export async function callLlm(messages, tools = null) {
   // Send only the fields every provider accepts back. Attachments never go
   // out.
