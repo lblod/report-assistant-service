@@ -8,7 +8,7 @@
 import { TOOLS, runTool } from './tools.js';
 import { describeProfile } from './describe.js';
 import { parseSpec } from '../runner/spec.js';
-import { SPEC_MEDIA_TYPE, readSpecFile } from '../chat.js';
+import { readSpecFile } from '../chat.js';
 
 // LLM calls per turn while the model writes a spec.
 const MAX_ROUNDS = 12;
@@ -89,9 +89,10 @@ Iterate with the user on the spec itself: paths, filters, columns. The
 current spec, the last one in the conversation, comes with the user's
 message. When the user refines (other columns, filters or title), change the
 current spec. When the user asks for a different report, one that lists
-another kind of thing per row, start a new spec. Older specs show only as a
-bijlage name. Only when the user asks for an older spec, open it with
-read_spec and change that one. When the spec is ready, stop.
+another kind of thing per row, start a new spec. Older specs show only as
+one line: title, time made and file URI. Only when the user asks for an
+older spec, open it with read_spec and that file URI, and change that one.
+When the spec is ready, stop.
 
 The spec itself does not go in your text: the application keeps the spec
 that validate_spec accepted and shows it to the user. So in your answer,
@@ -108,15 +109,16 @@ other data values as they are. Earlier turns are context only. Answer the last
 one.`;
 
 // One refine turn. turns is the conversation so far, [{ role, content,
-// attachments }], newest last. Sends it to the model and runs the tools the
-// model asks for, until it answers in text or MAX_ROUNDS runs out. The model
-// may only propose a spec it validated, hence the tool rounds. Returns the
-// answer text and the last spec validate_spec accepted in this turn, or null
-// when there is none or the rounds ran out.
-export async function ask(turns, profiles) {
-  const current = findCurrentSpec(turns);
-  const messages = [{ role: 'system', content: await buildSystemPrompt(current, profiles) },
-    ...addCurrentSpec(turns.map(addSpecHint), current)];
+// attachments }], newest last. specs are the specs of the conversation,
+// [{ fileUri, title, created }], newest last. Sends it to the model and runs
+// the tools the model asks for, until it answers in text or MAX_ROUNDS runs
+// out. The model may only propose a spec it validated, hence the tool rounds.
+// Returns the answer text and the last spec validate_spec accepted in this
+// turn, or null when there is none or the rounds ran out.
+export async function ask(turns, profiles, specs) {
+  const current = await readCurrentSpec(specs);
+  const messages = [{ role: 'system', content: await buildSystemPrompt(current, profiles, findUnseenSpecs(turns, specs)) },
+    ...addCurrentSpec(turns.map(turn => addSpecHint(turn, specs)), current)];
   let spec = null;
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -129,7 +131,7 @@ export async function ask(turns, profiles) {
       const args = parseArgs(call.function.arguments);
       let result;
       try {
-        result = await runTool(call.function.name, args, profiles);
+        result = await runTool(call.function.name, args, profiles, specs);
       } catch (e) {
         result = { content: `tool failed: ${String(e.message || e).split('\n')[0]}` };
       }
@@ -152,16 +154,28 @@ export async function ask(turns, profiles) {
   return { text: 'Sorry, dit rapport is te moeilijk. Contacteer de developers.', spec: null };
 }
 
-// The history carries the spec as a bijlage, never as text. Paste one hint
-// line per spec under the message text, so the model knows a spec is there
-// and can open it with read_spec when the user asks for it. A spec the model
+// One line that names a spec for the model: its title, when it was made and
+// the file uri read_spec takes.
+function describeSpec(spec) {
+  return `Spec "${spec.title || 'no title'}", made ${spec.created}, <${spec.fileUri}>`;
+}
+
+// The history carries the spec as a bijlage, never as text. Paste one line
+// per spec under the message text, so the model knows a spec is there and
+// can open it with read_spec when the user asks for it. A spec the model
 // printed in its answer anyway is cut from the text.
-function addSpecHint(turn) {
+function addSpecHint(turn, specs) {
   const content = turn.role === 'assistant' ? cutSpecText(turn.content) : turn.content;
-  const specs = (turn.attachments || []).filter(a => a.mediaType === SPEC_MEDIA_TYPE);
-  if (!specs.length) return { ...turn, content };
-  const hints = specs.map(a => `Bijlage "${a.name}", a spec file.`);
-  return { ...turn, content: `${content}\n\n${hints.join('\n\n')}` };
+  const attached = specs.filter(s => (turn.attachments || []).includes(s.fileUri));
+  if (!attached.length) return { ...turn, content };
+  return { ...turn, content: `${content}\n\n${attached.map(describeSpec).join('\n')}` };
+}
+
+// The specs no turn carries: their messages are older than the history. The
+// system prompt lists them, so the user can still go back to one.
+function findUnseenSpecs(turns, specs) {
+  const seen = new Set(turns.flatMap(t => t.attachments || []));
+  return specs.filter(s => !seen.has(s.fileUri));
 }
 
 // A code block that holds a spec becomes "(spec left out)": the spec lives
@@ -170,20 +184,22 @@ function cutSpecText(text) {
   return text.replace(/```[\s\S]*?```/g, block => (block.includes('ReportSpec') ? '(spec left out)' : block));
 }
 
-// The current spec: the last spec bijlage in the conversation, or null.
-// Refine changes this spec, so the model gets it in full.
-function findCurrentSpec(turns) {
-  const name = turns.flatMap(t => t.attachments || [])
-    .filter(a => a.mediaType === SPEC_MEDIA_TYPE).at(-1)?.name;
-  const turtle = name && readSpecFile(name);
-  return turtle ? { name, turtle } : null;
+// The current spec: the last spec of the conversation with its Turtle, or
+// null. Refine changes this spec, so the model gets it in full.
+async function readCurrentSpec(specs) {
+  const last = specs.at(-1);
+  const turtle = last && await readSpecFile(last.fileUri);
+  return turtle ? { ...last, turtle } : null;
 }
 
 // The system prompt also carries what the model would otherwise fetch at the
 // start of every turn: the profile list, and the menu of the current spec's
 // profile. Without a menu the model calls describe_profile itself.
-async function buildSystemPrompt(current, profiles) {
+async function buildSystemPrompt(current, profiles, unseenSpecs) {
   const parts = [REFINE_PROMPT, `The profiles:\n${listProfiles(profiles)}`];
+  if (unseenSpecs.length) {
+    parts.push(`Specs from earlier in this conversation, before the messages you see:\n${unseenSpecs.map(describeSpec).join('\n')}`);
+  }
   const uri = current && readProfileUri(current.turtle);
   if (profiles.has(uri)) {
     try {
@@ -214,11 +230,10 @@ function readProfileUri(turtle) {
 // the history holds as text, so the model needs no read_spec for it.
 function addCurrentSpec(messages, current) {
   if (!current) return messages;
-  const { name, turtle } = current;
   const last = messages.at(-1);
   return [...messages.slice(0, -1), {
     ...last,
-    content: `${last.content}\n\nThe current spec, bijlage "${name}":\n\n${turtle}`,
+    content: `${last.content}\n\nThe current spec, ${describeSpec(current)}:\n\n${current.turtle}`,
   }];
 }
 

@@ -90,7 +90,7 @@ app.post('/assistant/report-specs/:id/run', async function(req, res, next) {
     // the access check: the caller's session decides what is readable
     reportSpec = await readReportSpec(req.params.id);
     if (!reportSpec) return res.status(404).json({ error: 'no such report spec' });
-    prepared = prepareSpec(reportSpec.specFileName, profiles);
+    prepared = await prepareSpec(reportSpec.specFileUri, profiles);
   } catch (e) {
     console.error('[reports] could not prepare the run:', e);
     return next(e);

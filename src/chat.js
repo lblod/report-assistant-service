@@ -11,9 +11,13 @@ import { query, update, uuid,
 
 // Messages of history a turn reads.
 const HISTORY_LIMIT = 20;
+// Specs of one conversation the model gets to know of, the newest ones.
+const SPEC_LIMIT = 50;
 const REPORT_CLASS = 'http://lblod.data.gift/vocabularies/reporting/Report';
 const REPORT_SPEC_CLASS = 'http://lblod.data.gift/vocabularies/reporting/ReportSpec';
 const SHARE_DIR = process.env.SHARE_DIR || '/share';
+// A physical file's uri is this plus its path under SHARE_DIR.
+const SHARE_PREFIX = 'share://';
 const MESSAGE_BASE = 'http://data.lblod.info/id/chat-messages/';
 const FILE_BASE = 'http://data.lblod.info/files/';
 const REPORT_BASE = 'http://data.lblod.info/id/reports/';
@@ -23,14 +27,12 @@ const REPORT_SPEC_BASE = 'http://data.lblod.info/id/report-specs/';
 // every spec and report the service writes, never a person.
 export const CHAT_ASSISTANT_URI = process.env.CHAT_ASSISTANT_URI || 'http://data.lblod.info/id/chat-agents/report-assistant';
 
-export const SPEC_MEDIA_TYPE = 'text/turtle';
+const SPEC_MEDIA_TYPE = 'text/turtle';
 // The bijlage types. Match the add-chat-attachment-types-codelist migration
-// in the portal.
+// in the portal. The type says what a file is: readSpecFile opens only a
+// file typed SPEC_TYPE, so the LLM can never read a CSV or any other file.
 const SPEC_TYPE = 'http://lblod.data.gift/concepts/6693014e-7b7d-448c-bb24-80c9758521f3';
 export const RESULT_TYPE = 'http://lblod.data.gift/concepts/28d97698-e219-4a92-bdbd-7ab367a7524e';
-// Every spec file is called like this. readSpecFile opens nothing else, so
-// the LLM can never read a CSV or any other file on the share.
-const SPEC_FILE_NAME = /^specificatie-[0-9a-f-]{36}\.ttl$/;
 
 const PREFIXES = `
   PREFIX mu: <http://mu.semte.ch/vocabularies/core/>
@@ -61,48 +63,37 @@ export async function readConversation(id) {
 }
 
 // The last HISTORY_LIMIT messages, oldest first, as
-// { role, content, attachments: [{ uri, name, mediaType, type }] }.
-// A message comes back once per bijlage, hence the wider LIMIT. The model
-// needs the conversation so far; the assistant's messages are told apart by
-// its agent URI (CHAT_ASSISTANT_URI).
+// { role, content, attachments }, attachments being the logical file uris.
+// Two queries: the limit counts messages, and a message with bijlagen comes
+// back once per bijlage. The model needs the conversation so far; the
+// assistant's messages are told apart by its agent URI (CHAT_ASSISTANT_URI).
 export async function readHistory(conversationUri) {
   const result = await query(`${PREFIXES}
-    SELECT ?message ?content ?maker ?created ?doc ?docName ?docFormat ?docType WHERE {
+    SELECT ?message ?content ?maker ?created WHERE {
       ?message sioc:has_container ${sparqlEscapeUri(conversationUri)} ;
         sioc:content ?content ;
         foaf:maker ?maker ;
         dct:created ?created .
-      OPTIONAL {
-        ?message as:attachment ?doc .
-        OPTIONAL { ?doc nfo:fileName ?docName . }
-        OPTIONAL { ?doc dct:format ?docFormat . }
-        OPTIONAL { ?doc dct:type ?docType . }
-      }
-    } ORDER BY DESC(?created) LIMIT ${HISTORY_LIMIT * 4}`);
-  const messages = [];
+    } ORDER BY DESC(?created) LIMIT ${HISTORY_LIMIT}`);
   const byMessage = new Map();
   for (const b of result.results.bindings.reverse()) {
-    const uri = b.message.value;
-    let message = byMessage.get(uri);
-    if (!message) {
-      message = {
-        role: b.maker.value === CHAT_ASSISTANT_URI ? 'assistant' : 'user',
-        content: b.content.value,
-        attachments: [],
-      };
-      byMessage.set(uri, message);
-      messages.push(message);
-    }
-    if (b.doc) {
-      message.attachments.push({
-        uri: b.doc.value,
-        name: b.docName?.value,
-        mediaType: b.docFormat?.value,
-        type: b.docType?.value,
-      });
-    }
+    byMessage.set(b.message.value, {
+      role: b.maker.value === CHAT_ASSISTANT_URI ? 'assistant' : 'user',
+      content: b.content.value,
+      attachments: [],
+    });
   }
-  return messages.slice(-HISTORY_LIMIT);
+  if (!byMessage.size) return [];
+
+  const attached = await query(`${PREFIXES}
+    SELECT ?message ?doc WHERE {
+      VALUES ?message { ${[...byMessage.keys()].map(sparqlEscapeUri).join(' ')} }
+      ?message as:attachment ?doc .
+    }`);
+  for (const b of attached.results.bindings) {
+    byMessage.get(b.message.value)?.attachments.push(b.doc.value);
+  }
+  return [...byMessage.values()];
 }
 
 // One message with its bijlagen, in one update that also touches the
@@ -183,23 +174,20 @@ export async function registerReport(title, fileUri, description, specUri) {
     }`);
 }
 
-// The ReportSpec with this uuid as { uri, title, description, specFileName },
+// The ReportSpec with this uuid as { uri, title, description, specFileUri },
 // or null when it does not exist or the caller may not read it. This read
 // is the access check: the caller's session decides what is readable.
-// specFileName is the name of its Turtle file (prov:generated). A spec made
-// before that pointed at its CSV there; readSpecFile refuses that name, so
-// such a spec cannot run again.
+// specFileUri is its Turtle file (prov:generated). A spec made before that
+// pointed at its CSV there; readSpecFile refuses that file, so such a spec
+// cannot run again.
 export async function readReportSpec(id) {
   const result = await query(`${PREFIXES}
-    SELECT ?spec ?title ?description ?specFileName WHERE {
+    SELECT ?spec ?title ?description ?specFile WHERE {
       ?spec a ${sparqlEscapeUri(REPORT_SPEC_CLASS)} ;
         mu:uuid ${sparqlEscapeString(id)} .
       OPTIONAL { ?spec dct:title ?title . }
       OPTIONAL { ?spec dct:description ?description . }
-      OPTIONAL {
-        ?spec prov:generated ?specFile .
-        ?specFile nfo:fileName ?specFileName .
-      }
+      OPTIONAL { ?spec prov:generated ?specFile . }
     } LIMIT 1`);
   const binding = result.results.bindings[0];
   if (!binding) return null;
@@ -207,8 +195,29 @@ export async function readReportSpec(id) {
     uri: binding.spec.value,
     title: binding.title?.value,
     description: binding.description?.value,
-    specFileName: binding.specFileName?.value,
+    specFileUri: binding.specFile?.value,
   };
+}
+
+// The specs of a conversation, oldest first, as { fileUri, title, created }:
+// the newest SPEC_LIMIT of them. The last one is the current spec. Only a
+// ReportSpec over a spec file counts; an older one points at its CSV. The
+// conversation was read as the caller, so these are the caller's specs.
+export async function readConversationSpecs(conversationUri) {
+  const result = await query(`${PREFIXES}
+    SELECT ?file ?title ?created WHERE {
+      ?spec a ${sparqlEscapeUri(REPORT_SPEC_CLASS)} ;
+        dct:isPartOf ${sparqlEscapeUri(conversationUri)} ;
+        prov:generated ?file ;
+        dct:created ?created .
+      ?file dct:type ${sparqlEscapeUri(SPEC_TYPE)} .
+      OPTIONAL { ?spec dct:title ?title . }
+    } ORDER BY DESC(?created) LIMIT ${SPEC_LIMIT}`);
+  return result.results.bindings.reverse().map(b => ({
+    fileUri: b.file.value,
+    title: b.title?.value,
+    created: b.created.value,
+  }));
 }
 
 // Writes a file to the share folder, where the file service serves it
@@ -217,22 +226,28 @@ export function writeShareFile(fileName, content) {
   writeFileSync(`${SHARE_DIR}/${fileName}`, content, 'utf8');
 }
 
-// A new spec bijlage; returns its logical file uri. The logical and the
-// physical file carry the same name, so readSpecFile finds the file by the
-// name the history shows.
+// A new spec bijlage; returns its logical file uri.
 export async function storeSpecFile(spec) {
   const fileName = `specificatie-${uuid()}.ttl`;
   writeShareFile(fileName, spec);
   return registerFile(fileName, SPEC_MEDIA_TYPE, SPEC_TYPE);
 }
 
-// The Turtle of a spec bijlage, or null when there is no such spec file.
-// Only spec file names pass (SPEC_FILE_NAME): read_spec lets the model name
-// the file, and it must never open a CSV.
-export function readSpecFile(fileName) {
-  if (!SPEC_FILE_NAME.test(fileName || '')) return null;
+// The Turtle of the spec bijlage with this logical file uri, or null when
+// there is no such spec file. Only a file typed SPEC_TYPE passes, so this
+// never opens a CSV. The physical file under it (nie:dataSource) says where
+// the content is on the share.
+export async function readSpecFile(fileUri) {
+  if (!fileUri) return null;
+  const result = await query(`${PREFIXES}
+    SELECT ?physical WHERE {
+      ${sparqlEscapeUri(fileUri)} dct:type ${sparqlEscapeUri(SPEC_TYPE)} .
+      ?physical nie:dataSource ${sparqlEscapeUri(fileUri)} .
+    } LIMIT 1`);
+  const physical = result.results.bindings[0]?.physical.value || '';
+  if (!physical.startsWith(SHARE_PREFIX) || physical.includes('..')) return null;
   try {
-    return readFileSync(`${SHARE_DIR}/${fileName}`, 'utf8');
+    return readFileSync(`${SHARE_DIR}/${physical.slice(SHARE_PREFIX.length)}`, 'utf8');
   } catch {
     return null;
   }
@@ -257,7 +272,7 @@ export async function registerFile(shareName, format, type, name = shareName) {
         nfo:fileSize ${size} ;
         nfo:fileCreated ${now} ;
         dct:type ${sparqlEscapeUri(type)} .
-      ${sparqlEscapeUri(`share://${shareName}`)} a nfo:FileDataObject ;
+      ${sparqlEscapeUri(`${SHARE_PREFIX}${shareName}`)} a nfo:FileDataObject ;
         mu:uuid ${sparqlEscapeString(uuid())} ;
         nfo:fileName ${sparqlEscapeString(shareName)} ;
         dct:format ${sparqlEscapeString(format)} ;

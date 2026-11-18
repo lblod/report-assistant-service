@@ -12,8 +12,8 @@ import { parseSpec } from './runner/spec.js';
 import { checkSpec } from './runner/check.js';
 import { runReport } from './runner/run.js';
 import { describeReport } from './llm/summary.js';
-import { storeSpecFile, readSpecFile, writeShareFile, registerFile, registerReport,
-         registerReportSpec, RESULT_TYPE } from './chat.js';
+import { storeSpecFile, readSpecFile, readConversationSpecs, writeShareFile, registerFile,
+         registerReport, registerReportSpec, RESULT_TYPE } from './chat.js';
 
 const NO_ANSWER = 'Er kwam geen antwoord. Probeer het opnieuw.';
 
@@ -25,7 +25,8 @@ const NO_ANSWER = 'Er kwam geen antwoord. Probeer het opnieuw.';
 // no text) gets a fixed text and no spec: only a spec the user saw explained
 // may run.
 export async function refineSpec(turns, profiles, conversationUri) {
-  const { text, spec } = await ask(turns, profiles);
+  const specs = await readConversationSpecs(conversationUri);
+  const { text, spec } = await ask(turns, profiles, specs);
   if (!text.trim()) return { text: NO_ANSWER };
   if (!spec) return { text: text.trim(), attachments: [] };
 
@@ -44,8 +45,8 @@ export async function refineSpec(turns, profiles, conversationUri) {
 // A spec file read, parsed and checked against the profiles as they are
 // now. Returns { spec }, or { error } with one sentence saying why it cannot
 // run. The chat and the spec tab both go through here.
-export function prepareSpec(fileName, profiles) {
-  const content = readSpecFile(fileName);
+export async function prepareSpec(fileUri, profiles) {
+  const content = await readSpecFile(fileUri);
   if (!content) return { error: 'this report spec has no spec file' };
   let spec;
   try {

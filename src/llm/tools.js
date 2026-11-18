@@ -44,13 +44,13 @@ export const TOOLS = [
     type: 'function',
     function: {
       name: 'read_spec',
-      description: 'Return the Turtle of a spec bijlage, a ttl file attached to an earlier message in this conversation. The current spec already comes with the user\'s message; use this only when the user asks for an older spec. Read-only.',
+      description: 'Return the Turtle of an older spec of this conversation. The current spec already comes with the user\'s message; use this only when the user asks for an older spec. Read-only.',
       parameters: {
         type: 'object',
         properties: {
-          file_name: { type: 'string', description: 'The file name of the spec bijlage, e.g. specificatie-<uuid>.ttl' },
+          file_uri: { type: 'string', description: 'The file URI of the spec, as its spec line in the conversation shows it' },
         },
-        required: ['file_name'],
+        required: ['file_uri'],
       },
     },
   },
@@ -73,12 +73,13 @@ export const TOOLS = [
 ];
 
 // Runs the tool the model asked for, by name. Returns { content } or, for
-// validate_spec, { content, spec }: see the top of this file.
-export async function runTool(name, args, profiles) {
+// validate_spec, { content, spec }: see the top of this file. specs are the
+// specs of this conversation: read_spec opens no other.
+export async function runTool(name, args, profiles, specs) {
   switch (name) {
     case 'describe_profile': return { content: await handleDescribeProfile(args, profiles) };
     case 'validate_spec': return handleValidateSpec(args, profiles);
-    case 'read_spec': return handleReadSpec(args);
+    case 'read_spec': return { content: await handleReadSpec(args, specs) };
     case 'lookup_values': return { content: await handleLookupValues(args, profiles) };
     default: return { content: `unknown tool "${name}"` };
   }
@@ -105,10 +106,14 @@ function handleValidateSpec({ spec }, profiles) {
   return { content: ['ok', ...buildWhereNotes(parsed, profiles.get(parsed.profileUri))].join('\n'), spec };
 }
 
-// read_spec: the Turtle of an older spec bijlage, so the user can go back
-// to it. Only spec files this service made are readable.
-function handleReadSpec({ file_name }) {
-  return { content: readSpecFile(file_name) || 'no such spec file.' };
+// read_spec: the Turtle of an older spec, so the user can go back to it.
+// Only a spec of this conversation is readable: the model names the file,
+// and it must not reach another user's spec. The model may copy the uri
+// with its angle brackets.
+async function handleReadSpec({ file_uri }, specs) {
+  const fileUri = String(file_uri || '').trim().replace(/^<|>$/g, '');
+  if (!specs.some(s => s.fileUri === fileUri)) return 'no such spec file.';
+  return await readSpecFile(fileUri) || 'no such spec file.';
 }
 
 // lookup_values: code-list values that match a term, so a filter names
