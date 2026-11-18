@@ -1,10 +1,6 @@
 // The chat's reads and writes: conversations, messages, their bijlagen and
-// the reports. Everything runs as the caller.
-//
-// Every write and the delete run under WRITE_SCOPE when it is set. The app
-// decides which graphs that scope may write, for example only the caller's
-// own graph, so these types do not also land in other graphs the caller can
-// write. Unset, no scope is sent.
+// the reports. Everything runs as the caller, with no graph: the app's
+// authorization decides where a write lands.
 //
 // A bijlage is a real file: a logical nfo:FileDataObject the file service
 // serves at /files/<uuid>/download, over a physical share:// object with
@@ -22,7 +18,6 @@ const MESSAGE_BASE = 'http://data.lblod.info/id/chat-messages/';
 const FILE_BASE = 'http://data.lblod.info/files/';
 const REPORT_BASE = 'http://data.lblod.info/id/reports/';
 const REPORT_SPEC_BASE = 'http://data.lblod.info/id/report-specs/';
-const WRITE_SCOPE = process.env.WRITE_SCOPE;
 // The agent that signs the assistant's messages, seeded by the portal's
 // chat-assistant migration. It is also the source (prov:wasAttributedTo) of
 // every spec and report the service writes, never a person.
@@ -137,20 +132,21 @@ export async function writeMessage({ conversationUri, content, maker, attachment
     }
     WHERE {
       OPTIONAL { ${conversation} sioc:last_activity_date ?old . }
-    }`, { scope: WRITE_SCOPE });
+    }`);
 
   return id;
 }
 
-// The ReportSpec the user saved from a chat: the report's title, description and
-// creation time, dct:isPartOf its conversation and prov:generated its
-// Turtle file (the spec bijlage). The CSV belongs to the report, which
-// links here with dct:conformsTo. The Turtle file is what the spec tab
-// downloads and what runs again later, outside the chat. Its source
-// (prov:wasAttributedTo) is the assistant agent. Returns the spec's id and uri.
+// The ReportSpec of a spec bijlage, written in the turn that made the spec:
+// the report's title, description and creation time, dct:isPartOf its
+// conversation and prov:generated its Turtle file. The user bookmarks it in
+// the frontend; the spec tab lists only the bookmarked ones. The Turtle file
+// is what runs, outside the chat. A report links here with dct:conformsTo.
+// Its source (prov:wasAttributedTo) is the assistant agent.
 export async function registerReportSpec(title, description, conversationUri, specFileUri) {
   const id = uuid();
   const spec = `${REPORT_SPEC_BASE}${id}`;
+  const titleLine = title ? `dct:title ${sparqlEscapeString(title)} ;\n        ` : '';
   const descriptionLine = description
     ? `dct:description ${sparqlEscapeString(description)} ;\n        `
     : '';
@@ -158,13 +154,11 @@ export async function registerReportSpec(title, description, conversationUri, sp
     INSERT DATA {
       ${sparqlEscapeUri(spec)} a ${sparqlEscapeUri(REPORT_SPEC_CLASS)} ;
         mu:uuid ${sparqlEscapeString(id)} ;
-        dct:title ${sparqlEscapeString(title)} ;
-        ${descriptionLine}prov:wasAttributedTo ${sparqlEscapeUri(CHAT_ASSISTANT_URI)} ;
+        ${titleLine}${descriptionLine}prov:wasAttributedTo ${sparqlEscapeUri(CHAT_ASSISTANT_URI)} ;
         dct:created ${sparqlEscapeDateTime(new Date())} ;
         dct:isPartOf ${sparqlEscapeUri(conversationUri)} ;
         prov:generated ${sparqlEscapeUri(specFileUri)} .
-    }`, { scope: WRITE_SCOPE });
-  return { id, uri: spec };
+    }`);
 }
 
 // The report of one run, pointing at the logical file of its CSV, so it
@@ -186,7 +180,7 @@ export async function registerReport(title, fileUri, description, specUri) {
         dct:created ${sparqlEscapeDateTime(new Date())} ;
         prov:generated ${sparqlEscapeUri(fileUri)} ;
         dct:conformsTo ${sparqlEscapeUri(specUri)} .
-    }`, { scope: WRITE_SCOPE });
+    }`);
 }
 
 // The ReportSpec with this uuid as { uri, title, description, specFileName },
@@ -215,37 +209,6 @@ export async function readReportSpec(id) {
     description: binding.description?.value,
     specFileName: binding.specFileName?.value,
   };
-}
-
-// The uuid of the ReportSpec saved for this spec file, or null. A spec
-// file is saved at most once; the read runs as the caller.
-export async function findReportSpecOfFile(fileUri) {
-  const result = await query(`${PREFIXES}
-    SELECT ?id WHERE {
-      ?spec a ${sparqlEscapeUri(REPORT_SPEC_CLASS)} ;
-        mu:uuid ?id ;
-        prov:generated ${sparqlEscapeUri(fileUri)} .
-    } LIMIT 1`);
-  return result.results.bindings[0]?.id.value || null;
-}
-
-// Removes a ReportSpec and the links of its reports to it. The spec file
-// stays, it is a bijlage of the chat; the reports and their CSVs stay too.
-// Two plain updates, to keep each one simple for sparql-parser.
-export async function deleteReportSpec(specUri) {
-  const spec = sparqlEscapeUri(specUri);
-  await update(`${PREFIXES}
-    DELETE {
-      ?report dct:conformsTo ${spec} .
-    } WHERE {
-      ?report dct:conformsTo ${spec} .
-    }`, { scope: WRITE_SCOPE });
-  await update(`
-    DELETE {
-      ${spec} ?p ?o .
-    } WHERE {
-      ${spec} ?p ?o .
-    }`, { scope: WRITE_SCOPE });
 }
 
 // Writes a file to the share folder, where the file service serves it
@@ -302,7 +265,7 @@ export async function registerFile(shareName, format, type, name = shareName) {
         nfo:fileCreated ${now} ;
         nie:dataSource ${sparqlEscapeUri(logical)} ;
         dct:type ${sparqlEscapeUri(type)} .
-    }`, { scope: WRITE_SCOPE });
+    }`);
 
   return logical;
 }
@@ -316,12 +279,6 @@ export async function registerFile(shareName, format, type, name = shareName) {
 // dct:conformsTo then points at a deleted spec. Returns how many share files
 // it removed. It runs as the caller, so the auth layer keeps a user to their
 // own conversation.
-//
-// Every query here runs under WRITE_SCOPE, the scope the reports and files
-// were written with. Without a scope, a type the user may write in several
-// graphs (reports, files) is deleted in only one of them by sparql-parser
-// 0.0.15, often not the one the data is in: the spec stayed while its share
-// file was removed.
 export async function deleteConversation(conversationUri) {
   const conversation = sparqlEscapeUri(conversationUri);
 
@@ -341,7 +298,7 @@ export async function deleteConversation(conversationUri) {
         ?report a ${sparqlEscapeUri(REPORT_CLASS)} ;
           prov:generated ?doc .
       }
-    }`, { scope: WRITE_SCOPE });
+    }`);
   const rows = result.results.bindings;
   const resultFiles = new Set(rows.filter(b => b.report).map(b => b.doc.value));
   const rowsToDelete = rows.filter(b => !resultFiles.has(b.doc.value));
@@ -354,7 +311,7 @@ export async function deleteConversation(conversationUri) {
     } WHERE {
       VALUES ?conversation { ${conversation} }
       ?conversation ?cp ?co .
-    }`, { scope: WRITE_SCOPE });
+    }`);
 
   await update(`${PREFIXES}
     DELETE {
@@ -362,7 +319,7 @@ export async function deleteConversation(conversationUri) {
     } WHERE {
       ?message sioc:has_container ${conversation} ;
         ?mp ?mo .
-    }`, { scope: WRITE_SCOPE });
+    }`);
 
   // The specs by their conversation, not by their file: an older spec points
   // at its CSV, which stays.
@@ -373,7 +330,7 @@ export async function deleteConversation(conversationUri) {
       ?spec a ${sparqlEscapeUri(REPORT_SPEC_CLASS)} ;
         dct:isPartOf ${conversation} ;
         ?sp ?so .
-    }`, { scope: WRITE_SCOPE });
+    }`);
 
   if (docs.length) {
     await update(`${PREFIXES}
@@ -384,7 +341,7 @@ export async function deleteConversation(conversationUri) {
         VALUES ?doc { ${docs.map(sparqlEscapeUri).join(' ')} }
         ?doc ?dp ?do .
         OPTIONAL { ?physical nie:dataSource ?doc ; ?pp ?po . }
-      }`, { scope: WRITE_SCOPE });
+      }`);
   }
 
   let removed = 0;

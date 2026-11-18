@@ -1,11 +1,11 @@
 # report-assistant-service
 
 A chat assistant. The user asks for a report. The assistant proposes a report
-spec. The user saves the spec and runs it. The report shows up in the reports
+spec. The user runs the spec. The report shows up in the reports
 list as a CSV.
 
 The user asks for a report. An LLM writes a report spec and explains it in the
-user's language. The service checks the spec. The user saves it and runs it as
+user's language. The service checks the spec. The user runs it as
 the user. The LLM does not write SPARQL. The LLM does not see the data of the
 report.
 
@@ -89,16 +89,9 @@ sparql-parser:
 Do not set `DEFAULT_MU_AUTH_SCOPE`. It would put every query under that
 scope, also the report run.
 
-The service writes messages, reports and files without a graph. So they land
-in every graph the user may write to that accepts those types. If you want
-them in one graph, set `WRITE_SCOPE`. Example, one graph per user:
-
-```lisp
-(with-scope "http://services.semantic.works/report-assistant/chat"
-  (grant (read write)
-    :to-graph chat
-    :for-allowed-group "report-assistant-user"))
-```
+The service writes messages, reports and files without a graph. The
+authorization of the app decides where they land: in the graphs the user may
+write to that accept those types.
 
 ### Logging the LLM calls
 
@@ -174,10 +167,10 @@ We add a small profile and run one report on it.
      rep:columns ( [ sh:path skos:prefLabel ; rdfs:label "naam" ] ) .
    ```
 
-4. Ask for changes (`Voeg ook de URI toe.`). When the spec is right, save it
-   with the button under the attachment. It then shows up in
-   "Rapportspecificaties". Run it there or from the chat. The report shows up
-   in the reports list.
+4. Ask for changes (`Voeg ook de URI toe.`). When the spec is right, run it
+   with the button under the attachment. The report shows up in the reports
+   list. Bookmark the spec to find it again in "Bewaarde
+   rapportspecificaties", where you can also run it.
 
 ## How it works
 
@@ -186,13 +179,13 @@ spec, or changes the current one. The service checks the spec against its
 profile. The LLM fixes what the check reports. The answer explains the spec
 in the user's language and has the spec as bijlage. Nothing runs.
 
-The user saves a spec bijlage with `POST /assistant/report-specs`. That
-writes a `reporting:ReportSpec`, so the spec shows up in the spec list.
-Right before the save, one LLM call writes the `dct:description`. It uses
-the conversation for this. It does not see report data. If the call fails,
-the spec is saved without a description.
+Every spec bijlage gets a `reporting:ReportSpec` in the same turn. One LLM
+call writes its `dct:description`. It uses the conversation for this. It does
+not see report data. If the call fails, the spec has no description. The
+user bookmarks a spec in the frontend, through mu-cl-resources. The spec list
+shows only the bookmarked ones.
 
-A saved spec runs with `POST /assistant/report-specs/:id/run`. The service
+A spec runs with `POST /assistant/report-specs/:id/run`. The service
 checks the spec again, runs it as the user, writes the CSV to the share and
 records a `reporting:Report` that conforms to the spec. The report shows up
 in the reports list. No LLM decides whether a report runs.
@@ -217,7 +210,6 @@ lists and the names it looks up for a filter.
 | `PROFILE_DIR` | `/config/profiles` | folder with the profiles, one `.ttl` file each |
 | `SHARE_DIR` | `/share` | where CSVs and specs are written |
 | `SERVICE_SCOPE` | `http://services.semantic.works/report-assistant` | scope of the reads of the LLM: code lists and names of linked entities |
-| `WRITE_SCOPE` | | scope of every write (messages, reports, files) and of the conversation delete. If not set, no scope is sent. |
 | `CHAT_ASSISTANT_URI` | `http://data.lblod.info/id/chat-agents/report-assistant` | agent that signs the answers and is the source (`prov:wasAttributedTo`) of every spec and report |
 | `CSV_SEPARATOR` | `;` | CSV column separator |
 | `ROW_LIMIT` | `200000` | a report with more rows fails. A report is never cut. |
@@ -245,19 +237,9 @@ of later runs of its specs stay too; their `dct:conformsTo` then points to a
 deleted spec. Answers `204`. Answers `404` if the user can not read the
 conversation.
 
-#### POST /assistant/report-specs
-
-Body `{ "conversation": "<uuid>", "spec": "<uri of a spec bijlage of that conversation>" }`.
-Saves the spec bijlage as a `reporting:ReportSpec`, so it shows up in the spec
-list and can run with `POST /assistant/report-specs/:id/run`. Answers `400`
-without both fields. Answers `404` if the user can not read the conversation
-or the spec is not a bijlage of it. Answers `422` if the spec file is gone or
-does not check out anymore. Answers `201` with `{ "id": "<uuid>" }`. A spec
-that is already saved answers `200` with the id it has. Nothing runs here.
-
 #### POST /assistant/report-specs/:id/run
 
-No body. Runs a saved `reporting:ReportSpec` again, outside the chat, as the
+No body. Runs a `reporting:ReportSpec`, outside the chat, as the
 user. The service reads the Turtle file of the spec and checks it against
 the profiles. Then it answers `202`. The run goes on in the background and
 records a new `reporting:Report` that conforms to the same spec, with the
@@ -265,13 +247,6 @@ description of the spec. It shows up in the reports list. No LLM is called.
 Answers `404` if the user can not read the spec. Answers `422` if its Turtle
 file is gone or does not check out anymore. If the run fails, it is only
 logged.
-
-#### DELETE /assistant/report-specs/:id
-
-Deletes a saved `reporting:ReportSpec`. The spec file stays: it is a bijlage
-of the chat, and the user can save it again there. The reports made with the
-spec stay too, with their CSV; they only lose the link to the spec. Answers
-`204`. Answers `404` if the user can not read the spec.
 
 ### Data model
 
@@ -290,7 +265,7 @@ spec stay too, with their CSV; they only lose the link to the spec. Answers
 | `sioc:Post`, `sioct:InstantMessage` | a message: `sioc:content`, `foaf:maker`, `as:attachment` to its bijlagen |
 | `nfo:FileDataObject` | a bijlage; `dct:type` says spec or executed report |
 | `reporting:Report` | one per run, from `POST /assistant/report-specs/:id/run`. Has `dct:title`, a `dct:description` of at most 300 characters in the user's language, `prov:generated` to the CSV, `dct:conformsTo` to its spec, and `prov:wasAttributedTo` to the assistant agent (`CHAT_ASSISTANT_URI`), also on a re-run |
-| `reporting:ReportSpec` | the spec the user saved from a conversation. Has `dct:title`, a `dct:description` of at most 300 characters in the user's language, `dct:created`, `dct:isPartOf` to its conversation, `prov:generated` to its Turtle file (the spec bijlage), and `prov:wasAttributedTo` to the assistant agent. The reports link to the spec. The spec does not link to its reports. |
+| `reporting:ReportSpec` | one per spec bijlage, written in the turn that made the spec. Has `dct:title`, a `dct:description` of at most 300 characters in the user's language, `dct:created`, `dct:isPartOf` to its conversation, `prov:generated` to its Turtle file (the spec bijlage), and `prov:wasAttributedTo` to the assistant agent. The frontend sets the bookmark on it. The reports link to the spec. The spec does not link to its reports. |
 
 The two bijlage types:
 

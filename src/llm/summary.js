@@ -1,4 +1,4 @@
-// A report's dct:description, written when the user saves a spec. The LLM
+// A report's dct:description, written in the turn that makes a spec. The LLM
 // reads only the conversation that agreed the report, never report data: one
 // short sentence in the user's language, at most MAX_LENGTH characters. It
 // stays outside the run, so it can move to another service later.
@@ -17,7 +17,7 @@ description only.`;
 // One description, or the title when the model returns no text. Only
 // `content` counts: reasoning_content and the like are the model's thinking,
 // not a description for the reports list. A failing call throws: the caller
-// then saves the spec without a description.
+// then writes the spec without a description.
 export async function describeReport(turns, title) {
   const transcript = turns
     .filter(t => t.content && t.content.trim())

@@ -4,27 +4,41 @@
 // The LLM proposes a spec. The last spec that checked out goes on the answer
 // as a bijlage, not in the text. Nothing runs in the chat.
 //
-// The user saves a spec as a report spec. A saved spec runs outside the
-// chat, with no LLM: prepareSpec reads and checks it, runSavedSpec runs it.
+// Every spec bijlage has a ReportSpec. It runs outside the chat, with no
+// LLM: prepareSpec reads and checks it, runSavedSpec runs it.
 import { uuid } from 'mu';
 import { ask } from './llm/loop.js';
 import { parseSpec } from './runner/spec.js';
 import { checkSpec } from './runner/check.js';
 import { runReport } from './runner/run.js';
+import { describeReport } from './llm/summary.js';
 import { storeSpecFile, readSpecFile, writeShareFile, registerFile, registerReport,
-         SPEC_MEDIA_TYPE, RESULT_TYPE } from './chat.js';
+         registerReportSpec, RESULT_TYPE } from './chat.js';
 
 const NO_ANSWER = 'Er kwam geen antwoord. Probeer het opnieuw.';
 
 // One refine turn: the LLM answers, and the spec it validated is stored and
-// attached to that answer as a bijlage. An empty answer (a reasoning model
-// can end with no text) gets a fixed text and no spec: only a spec the user
-// saw explained may run.
-export async function refineSpec(turns, profiles) {
+// attached to that answer as a bijlage. The spec also gets its ReportSpec,
+// with a description the LLM writes from the conversation, so the user can
+// bookmark and run it. The description is nice to have: a failing LLM call
+// must not block the answer. An empty answer (a reasoning model can end with
+// no text) gets a fixed text and no spec: only a spec the user saw explained
+// may run.
+export async function refineSpec(turns, profiles, conversationUri) {
   const { text, spec } = await ask(turns, profiles);
   if (!text.trim()) return { text: NO_ANSWER };
-  const attachments = spec ? [await storeSpecFile(spec)] : [];
-  return { text: text.trim(), attachments };
+  if (!spec) return { text: text.trim(), attachments: [] };
+
+  const specFile = await storeSpecFile(spec);
+  const title = parseSpec(spec).title;
+  let description;
+  try {
+    description = await describeReport([...turns, { role: 'assistant', content: text }], title);
+  } catch (e) {
+    console.error('[chat] no description for the spec:', e);
+  }
+  await registerReportSpec(title, description, conversationUri, specFile);
+  return { text: text.trim(), attachments: [specFile] };
 }
 
 // A spec file read, parsed and checked against the profiles as they are
@@ -59,13 +73,6 @@ async function runSpec(spec, profiles) {
   const shareName = `${uuid()}.csv`;
   writeShareFile(shareName, await runReport(spec, profiles.get(spec.profileUri)));
   return registerFile(shareName, 'text/csv', RESULT_TYPE, `${slugify(spec.title)}.csv`);
-}
-
-// The spec bijlage with this uri in the history, or null. A save names its
-// spec by uri; only a spec attached to a message of the conversation counts.
-export function findSpecAttachment(history, uri) {
-  return history.flatMap(message => message.attachments)
-    .find(a => a.mediaType === SPEC_MEDIA_TYPE && a.uri === uri) || null;
 }
 
 // A file name from a title. Falls back to "report".
