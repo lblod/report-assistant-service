@@ -1,5 +1,5 @@
 // The tools the LLM calls, refinement only: describe_profile,
-// validate_spec, read_spec and lookup_values. Each returns { content }, the
+// validate_spec, read_spec, lookup_values and find_path. Each returns { content }, the
 // plain text for the model; validate_spec adds spec when the spec checked
 // out. No report is created, no spec is evaluated; the database reads run
 // under the service scope (public graph).
@@ -70,6 +70,23 @@ export const TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'find_path',
+      description: 'Find how two entities of a profile connect: the shortest chain of fields from one to the other, ready to paste as sh:path. Give via to go through an entity both hang on, e.g. from functionaris via bestuurseenheid to mandataris. Reads the profile only, no database: it says a path exists, not that data does.',
+      parameters: {
+        type: 'object',
+        properties: {
+          profile_id: { type: 'string', description: 'The profile URI from the profile list' },
+          from: { type: 'string', description: 'The entity the rows are: its rep:entity URI from the menu' },
+          to: { type: 'string', description: 'The entity to reach: its rep:entity URI from the menu' },
+          via: { type: 'string', description: 'Optional. An entity the path must pass: its rep:entity URI from the menu' },
+        },
+        required: ['profile_id', 'from', 'to'],
+      },
+    },
+  },
 ];
 
 // Runs the tool the model asked for, by name. Returns { content } or, for
@@ -81,6 +98,7 @@ export async function runTool(name, args, profiles, specs) {
     case 'validate_spec': return handleValidateSpec(args, profiles);
     case 'read_spec': return { content: await handleReadSpec(args, specs) };
     case 'lookup_values': return { content: await handleLookupValues(args, profiles) };
+    case 'find_path': return { content: handleFindPath(args, profiles) };
     default: return { content: `unknown tool "${name}"` };
   }
 }
@@ -123,4 +141,64 @@ async function handleLookupValues({ profile_id, field, term }, profiles) {
   if (error) return error;
   if (!term) return 'no term to search for.';
   return lookupValues(profiles.get(profile_id), field, term);
+}
+
+// find_path: the chain of fields between two entities, as a ready sh:path
+// with the entities it passes. A small model reads the menu field by field
+// and misses a long path; this does the search for it. With via the path is
+// two legs, from to via and via to to, so it can go up to a shared node and
+// down again. Profile only: no database.
+function handleFindPath({ profile_id, from, to, via }, profiles) {
+  const error = checkProfile(profiles, profile_id);
+  if (error) return error;
+  const profile = profiles.get(profile_id);
+  const stops = [];
+  for (const name of via ? [from, via, to] : [from, to]) {
+    const shape = findEntity(profile, name);
+    if (!shape) return `no entity "${name}" in "${profile.title}". Give the rep:entity URI the menu shows after each entity.`;
+    stops.push(shape);
+  }
+  const steps = [];
+  for (let i = 1; i < stops.length; i++) {
+    const leg = findShortestPath(profile, stops[i - 1], stops[i]);
+    if (!leg) return `no path from "${stops[i - 1].label}" to "${stops[i].label}" in "${profile.title}".`;
+    steps.push(...leg);
+  }
+  if (!steps.length) return 'from and to are the same entity: no path needed.';
+  const path = steps.map(({ field }) => (field.inverse ? `[ sh:inversePath <${field.path}> ]` : `<${field.path}>`));
+  return [
+    `sh:path ( ${path.join(' ')} )`,
+    `${steps.length} steps: ${[stops[0], ...steps.map(s => s.shape)].map(s => s.label).join(' → ')}`,
+    `It ends on the entity "${stops.at(-1).label}". For a column, add one of its value fields as the last step.`,
+  ].join('\n');
+}
+
+// The entity the model names: by its rep:entity URI, with or without angle
+// brackets.
+function findEntity(profile, name) {
+  const uri = String(name || '').trim().replace(/^<|>$/g, '');
+  return profile.shapes.find(s => s.uri === uri) || null;
+}
+
+// The shortest chain of link fields from one entity to another, as
+// [{ field, shape }], shape being the entity that step lands on; [] when
+// both are the same, null when nothing connects them. Breadth-first over
+// the entities, in the order the profile lists its fields, so the same
+// question always gives the same path.
+function findShortestPath(profile, from, to) {
+  const reached = new Map([[from.uri, []]]);
+  const queue = [from];
+  while (queue.length) {
+    const shape = queue.shift();
+    if (shape.uri === to.uri) return reached.get(shape.uri);
+    for (const field of shape.fields) {
+      for (const uri of field.nodes) {
+        const next = profile.shapes.find(s => s.uri === uri);
+        if (!next || reached.has(uri)) continue;
+        reached.set(uri, [...reached.get(shape.uri), { field, shape: next }]);
+        queue.push(next);
+      }
+    }
+  }
+  return null;
 }

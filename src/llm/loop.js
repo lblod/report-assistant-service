@@ -71,9 +71,19 @@ Rules:
   check it.
 - Only offer what validate_spec accepted. Before you suggest an alternative,
   write it and validate it; if it does not validate, say it cannot be done.
-- One answer carries one spec, and one spec is one report on one profile. If
-  the question needs two reports, say so, propose the first, and offer the
-  second as the next step.
+  Before you tell the user something cannot be done, write it and validate
+  it.
+- One answer carries one spec, and one spec is one report on one profile. The
+  rows are one kind of thing, but a column may show another kind. When the
+  user wants two things that hang on the same node (the leidinggevenden of a
+  bestuurseenheid and its burgemeester), that is one report: walk the column
+  from the row up to that node, then down again over the inverse fields, and
+  keep the one that is wanted with rep:where. find_path gives that path: from
+  the row's entity, to the other entity, via the node they share. Only when
+  find_path finds no path, or the two are in two profiles, say it needs two
+  reports, propose the first, and offer the second as the next step.
+- "Current" or "huidige" means no end date on or before the time now: on the
+  end date field, sh:maxInclusive with that time and sh:maxCount 0.
 - Every value of a column gets its own row. Only when the user asks for one
   row per thing, or for the earliest or latest date or the lowest or highest
   number, add rep:collect to that column; the menu shows how. Say in your
@@ -110,6 +120,11 @@ what happens with the spec after that. Do not print the Turtle yourself.
 Always prefix the spec with @prefix lines. Use the prefixes the profile
 declares. Write the spec as one Turtle block. Then call validate_spec. Fix
 what it says, up to three rounds. Then propose and stop.
+
+State as fact only what validate_spec or a lookup told you. Anything else,
+such as what cannot be done, what the profile lacks or what the user means,
+is your reading: say "I think" or "as I understand it". Do not tell the user
+what they got right or wrong.
 
 Reply to the user in the language of their last message. Keep names, codes and
 other data values as they are. Earlier turns are context only. Answer the last
@@ -203,7 +218,8 @@ async function readCurrentSpec(specs) {
 // start of every turn: the profile list, and the menu of the current spec's
 // profile. Without a menu the model calls describe_profile itself.
 async function buildSystemPrompt(current, profiles, unseenSpecs) {
-  const parts = [REFINE_PROMPT, `The profiles:\n${listProfiles(profiles)}`];
+  const parts = [REFINE_PROMPT, `The time now is ${new Date().toISOString().slice(0, 19)} (UTC).`,
+    `The profiles:\n${listProfiles(profiles)}`];
   if (unseenSpecs.length) {
     parts.push(`Specs from earlier in this conversation, before the messages you see:\n${unseenSpecs.map(describeSpec).join('\n')}`);
   }
