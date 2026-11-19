@@ -68,7 +68,7 @@ needs to:
 
 - read the data the profiles describe;
 - write files (`nfo:FileDataObject`) and reports (`reporting:Report`);
-- read and write the chat (`sioc:Thread`, `sioc:Post`, `sioct:InstantMessage`).
+- read and write the chat (`sioc:Thread`, `sioc:Post`).
 
 There is one exception. While the LLM writes a spec, it reads code lists and
 the names of linked entities (a bestuurseenheid, a persoon) to suggest filter
@@ -256,7 +256,6 @@ logged.
 | Prefix | URI |
 |---|---|
 | sioc | `http://rdfs.org/sioc/ns#` |
-| sioct | `http://rdfs.org/sioc/types#` |
 | nfo | `http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#` |
 | as | `https://www.w3.org/ns/activitystreams#` |
 | reporting | `http://lblod.data.gift/vocabularies/reporting/` |
@@ -265,7 +264,7 @@ logged.
 | Class | What |
 |---|---|
 | `sioc:Thread` | a conversation, made by the frontend |
-| `sioc:Post`, `sioct:InstantMessage` | a message: `sioc:content`, `foaf:maker`, `as:attachment` to its bijlagen |
+| `sioc:Post` | a message: `sioc:content`, `foaf:maker`, `as:attachment` to its bijlagen |
 | `nfo:FileDataObject` | a bijlage; `dct:type` says spec or executed report. The service only opens a file typed as spec, found by its URI |
 | `reporting:Report` | one per run, from `POST /assistant/report-specs/:id/run`. Has `dct:title`, a `dct:description` of at most 300 characters in the user's language, `prov:generated` to the CSV, `dct:conformsTo` to its spec, and `prov:wasAttributedTo` to the assistant agent (`CHAT_ASSISTANT_URI`), also on a re-run |
 | `reporting:ReportSpec` | one per spec bijlage, written in the turn that made the spec. Has `dct:title`, a `dct:description` of at most 300 characters in the user's language, `dct:created`, `dct:isPartOf` to its conversation, `prov:generated` to its Turtle file (the spec bijlage), and `prov:wasAttributedTo` to the assistant agent. The frontend sets the bookmark on it. The reports link to the spec. The spec does not link to its reports. |

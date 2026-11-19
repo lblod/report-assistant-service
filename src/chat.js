@@ -37,7 +37,6 @@ export const RESULT_TYPE = 'http://lblod.data.gift/concepts/28d97698-e219-4a92-b
 const PREFIXES = `
   PREFIX mu: <http://mu.semte.ch/vocabularies/core/>
   PREFIX sioc: <http://rdfs.org/sioc/ns#>
-  PREFIX sioct: <http://rdfs.org/sioc/types#>
   PREFIX dct: <http://purl.org/dc/terms/>
   PREFIX foaf: <http://xmlns.com/foaf/0.1/>
   PREFIX as: <https://www.w3.org/ns/activitystreams#>
@@ -111,7 +110,7 @@ export async function writeMessage({ conversationUri, content, maker, attachment
       ${conversation} sioc:last_activity_date ?old .
     }
     INSERT {
-      ${message} a sioc:Post , sioct:InstantMessage ;
+      ${message} a sioc:Post ;
         mu:uuid ${sparqlEscapeString(id)} ;
         sioc:has_container ${conversation} ;
         sioc:content ${sparqlEscapeString(content)} ;
