@@ -31,6 +31,9 @@ To filter on what a link reaches (a code, a bestuurseenheid, anything with a nam
 A date filter is sh:minInclusive or sh:maxInclusive with "yyyy-mm-ddThh:mm:ss"^^xsd:dateTime.
 The time is required: T00:00:00 starts a day, T23:59:59 ends it.
 (the xsd prefix above is not copied: add @prefix xsd: <http://www.w3.org/2001/XMLSchema#>).
+A column gives every value its own row. rep:collect on a column changes that: [ sh:path ( ... ) ; rdfs:label "..." ; rep:collect sh:groupConcat ; sh:separator "; " ] joins all its values in one cell (without sh:separator they are joined by ","); rep:collect sh:min or sh:max keeps only the lowest or highest value, and only on a date or number field.
+A collected column that starts with the same steps as a column that is not collected is collected per node on those steps, so that node still gets its own row.
+A filter can test whether a path has values at all: sh:property [ sh:path ( ... ) ; sh:maxCount 0 ] keeps the rows that have none, sh:minCount 1 the rows that have at least one, sh:minCount 2 the rows that have two different values. No other count works. sh:maxCount 0 next to a value test (sh:hasValue, sh:in, sh:pattern, a date range) means "none with such a value".
 `];
   for (const shape of profile.shapes) {
     lines.push(`${shape.label} — sh:targetClass <${shape.targetClass}> ; rep:entity <${shape.uri}>`);
