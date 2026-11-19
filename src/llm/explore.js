@@ -4,7 +4,7 @@
 // that scope the public graph only, so the LLM reads public data, the same
 // for every caller, and never what a report would show. Nothing here counts
 // or runs a spec.
-import { query, sparqlEscapeString } from 'mu';
+import { query, sparqlEscapeString, sparqlEscapeUri } from 'mu';
 
 // Must match the with-scope grant in the app's config.lisp.
 const SERVICE_SCOPE = process.env.SERVICE_SCOPE || 'http://services.semantic.works/report-assistant';
@@ -28,7 +28,7 @@ export async function fetchCodeList(type) {
   let more = false;
   try {
     const r = await queryPublic(`SELECT ?uri ?label WHERE {
-    ?uri a <${type}> .
+    ?uri a ${sparqlEscapeUri(type)} .
     OPTIONAL { ?uri <http://www.w3.org/2004/02/skos/core#prefLabel> ?label . }
   } LIMIT ${INLINE_VALUES_MAX + 1}`);
     values = r.results.bindings.slice(0, INLINE_VALUES_MAX).map(b => ({
@@ -60,7 +60,7 @@ export async function lookupValues(profile, field, term) {
   const exactRow = rows.find(r => r.label.toLowerCase() === lower);
   const matches = (exactRow ? [exactRow, ...rows.filter(r => r !== exactRow)] : rows).slice(0, LOOKUP_LIMIT);
   if (!matches.length) {
-    const any = await queryPublic(`ASK { ?uri a <${type}> }`);
+    const any = await queryPublic(`ASK { ?uri a ${sparqlEscapeUri(type)} }`);
     if (!any.boolean) return `nothing of ${field} is in the part of the database you read: match the name text with sh:pattern.`;
     return `no value matches "${term}" in ${field}. You read only part of the database, so the value may well exist where the report runs: match the name text with sh:pattern, or try another spelling first.`;
   }
@@ -75,7 +75,7 @@ export async function lookupValues(profile, field, term) {
 // language-tagged labels match.
 async function queryLabels(term, type) {
   const q = `SELECT DISTINCT ?uri ?label WHERE {
-    ?uri a <${type}> ;
+    ?uri a ${sparqlEscapeUri(type)} ;
          <http://www.w3.org/2004/02/skos/core#prefLabel> ?label .
     FILTER(REGEX(str(?label), ${sparqlEscapeString(escapeRegex(term))}, "i"))
   } ORDER BY ?label LIMIT ${LOOKUP_LIMIT * 8}`;

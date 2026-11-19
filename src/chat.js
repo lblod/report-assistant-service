@@ -244,13 +244,20 @@ export async function readSpecFile(fileUri) {
       ${sparqlEscapeUri(fileUri)} dct:type ${sparqlEscapeUri(SPEC_TYPE)} .
       ?physical nie:dataSource ${sparqlEscapeUri(fileUri)} .
     } LIMIT 1`);
-  const physical = result.results.bindings[0]?.physical.value || '';
-  if (!physical.startsWith(SHARE_PREFIX) || physical.includes('..')) return null;
+  const path = findSharePath(result.results.bindings[0]?.physical.value);
+  if (!path) return null;
   try {
-    return readFileSync(`${SHARE_DIR}/${physical.slice(SHARE_PREFIX.length)}`, 'utf8');
+    return readFileSync(path, 'utf8');
   } catch {
     return null;
   }
+}
+
+// Where the physical file with this share:// uri is on disk, or null when
+// the uri is no share uri or tries to leave the share.
+function findSharePath(physicalUri) {
+  if (!physicalUri?.startsWith(SHARE_PREFIX) || physicalUri.includes('..')) return null;
+  return `${SHARE_DIR}/${physicalUri.slice(SHARE_PREFIX.length)}`;
 }
 
 // One logical file called `name` over the physical share file `shareName`,
@@ -297,18 +304,15 @@ export async function registerFile(shareName, format, type, name = shareName) {
 export async function deleteConversation(conversationUri) {
   const conversation = sparqlEscapeUri(conversationUri);
 
-  // The bijlagen and their share names first: once the triples are gone
+  // The bijlagen and their physical files first: once the triples are gone
   // they cannot be found back. ?report is set when a report generated the
   // bijlage; the filter happens here, not in SPARQL, to keep the query plain
   // for sparql-parser.
   const result = await query(`${PREFIXES}
-    SELECT DISTINCT ?doc ?name ?report WHERE {
+    SELECT DISTINCT ?doc ?physical ?report WHERE {
       ?message sioc:has_container ${conversation} ;
         as:attachment ?doc .
-      OPTIONAL {
-        ?physical nie:dataSource ?doc ;
-          nfo:fileName ?name .
-      }
+      OPTIONAL { ?physical nie:dataSource ?doc . }
       OPTIONAL {
         ?report a ${sparqlEscapeUri(REPORT_CLASS)} ;
           prov:generated ?doc .
@@ -318,7 +322,7 @@ export async function deleteConversation(conversationUri) {
   const resultFiles = new Set(rows.filter(b => b.report).map(b => b.doc.value));
   const rowsToDelete = rows.filter(b => !resultFiles.has(b.doc.value));
   const docs = [...new Set(rowsToDelete.map(b => b.doc.value))];
-  const names = [...new Set(rowsToDelete.filter(b => b.name).map(b => b.name.value))];
+  const paths = [...new Set(rowsToDelete.map(b => findSharePath(b.physical?.value)).filter(Boolean))];
 
   await update(`
     DELETE {
@@ -360,9 +364,9 @@ export async function deleteConversation(conversationUri) {
   }
 
   let removed = 0;
-  for (const name of names) {
+  for (const path of paths) {
     try {
-      unlinkSync(`${SHARE_DIR}/${name}`);
+      unlinkSync(path);
       removed++;
     } catch {
       // the file was already gone
