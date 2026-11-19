@@ -177,9 +177,7 @@ export async function registerReport(title, fileUri, description, specUri) {
 // The ReportSpec with this uuid as { uri, title, description, specFileUri },
 // or null when it does not exist or the caller may not read it. This read
 // is the access check: the caller's session decides what is readable.
-// specFileUri is its Turtle file (prov:generated). A spec made before that
-// pointed at its CSV there; readSpecFile refuses that file, so such a spec
-// cannot run again.
+// specFileUri is its Turtle file (prov:generated).
 export async function readReportSpec(id) {
   const result = await query(`${PREFIXES}
     SELECT ?spec ?title ?description ?specFile WHERE {
@@ -201,8 +199,8 @@ export async function readReportSpec(id) {
 
 // The specs of a conversation, oldest first, as { fileUri, title, created }:
 // the newest SPEC_LIMIT of them. The last one is the current spec. Only a
-// ReportSpec over a spec file counts; an older one points at its CSV. The
-// conversation was read as the caller, so these are the caller's specs.
+// ReportSpec over a spec file counts. The conversation was read as the
+// caller, so these are the caller's specs.
 export async function readConversationSpecs(conversationUri) {
   const result = await query(`${PREFIXES}
     SELECT ?file ?title ?created WHERE {
@@ -292,37 +290,29 @@ export async function registerFile(shareName, format, type, name = shareName) {
   return logical;
 }
 
-// Deletes the conversation, its messages, its report specs and the bijlagen
-// no report needs (the spec files: the logical file, the physical one under
-// it and the share file). The reports stay, with their CSV: they are
-// results, listed under Reports. An older conversation, from when a report
-// ran in the chat, has the CSV as a bijlage of the answer, so a bijlage a
-// report generated is skipped. A kept report's
-// dct:conformsTo then points at a deleted spec. Returns how many share files
-// it removed. It runs as the caller, so the auth layer keeps a user to their
-// own conversation.
+// Deletes the conversation, its messages, its report specs and its spec
+// files (the logical file, the physical one under it and the share file).
+// The reports stay, with their CSV: they are results, listed under Reports.
+// A kept report's dct:conformsTo then points at a deleted spec. Returns how
+// many share files it removed. It runs as the caller, so the auth layer
+// keeps a user to their own conversation.
 export async function deleteConversation(conversationUri) {
   const conversation = sparqlEscapeUri(conversationUri);
 
-  // The bijlagen and their physical files first: once the triples are gone
-  // they cannot be found back. ?report is set when a report generated the
-  // bijlage; the filter happens here, not in SPARQL, to keep the query plain
-  // for sparql-parser.
+  // The spec files and their physical files first: once the triples are
+  // gone they cannot be found back. Only a bijlage typed SPEC_TYPE counts:
+  // the service sets that type, a client cannot, so a file attached to a
+  // message by any other way is never removed from the share.
   const result = await query(`${PREFIXES}
-    SELECT DISTINCT ?doc ?physical ?report WHERE {
+    SELECT DISTINCT ?doc ?physical WHERE {
       ?message sioc:has_container ${conversation} ;
         as:attachment ?doc .
+      ?doc dct:type ${sparqlEscapeUri(SPEC_TYPE)} .
       OPTIONAL { ?physical nie:dataSource ?doc . }
-      OPTIONAL {
-        ?report a ${sparqlEscapeUri(REPORT_CLASS)} ;
-          prov:generated ?doc .
-      }
     }`);
   const rows = result.results.bindings;
-  const resultFiles = new Set(rows.filter(b => b.report).map(b => b.doc.value));
-  const rowsToDelete = rows.filter(b => !resultFiles.has(b.doc.value));
-  const docs = [...new Set(rowsToDelete.map(b => b.doc.value))];
-  const paths = [...new Set(rowsToDelete.map(b => findSharePath(b.physical?.value)).filter(Boolean))];
+  const docs = [...new Set(rows.map(b => b.doc.value))];
+  const paths = [...new Set(rows.map(b => findSharePath(b.physical?.value)).filter(Boolean))];
 
   await update(`
     DELETE {
@@ -340,8 +330,6 @@ export async function deleteConversation(conversationUri) {
         ?mp ?mo .
     }`);
 
-  // The specs by their conversation, not by their file: an older spec points
-  // at its CSV, which stays.
   await update(`${PREFIXES}
     DELETE {
       ?spec ?sp ?so .

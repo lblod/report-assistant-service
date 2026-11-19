@@ -25,7 +25,9 @@ export function loadProfiles(dir) {
 }
 
 // One profile file. Its owl:Ontology names it; each sh:NodeShape is an
-// entity with its fields and discriminators.
+// entity with its fields and discriminators. A profile with a hole (no
+// title, an entity with no class or label, a field with no path or kind)
+// is refused here, so no later code has to guess around it.
 function loadProfile(file) {
   let store;
   try {
@@ -37,15 +39,26 @@ function loadProfile(file) {
   const ontology = store.getQuads(null, RDF + 'type', OWL_ONTOLOGY)[0];
   if (!ontology) throw new Error(`${file}: no owl:Ontology. A profile file must name itself.`);
   const uri = ontology.subject.value;
-  const title = store.getQuads(ontology.subject, 'http://purl.org/dc/terms/title', null)[0]?.object.value || uri;
+  const title = store.getQuads(ontology.subject, 'http://purl.org/dc/terms/title', null)[0]?.object.value;
+  if (!title) throw new Error(`${file}: the owl:Ontology has no dct:title.`);
 
   const shapes = store.getQuads(null, RDF + 'type', SH + 'NodeShape').map(q => q.subject);
   if (!shapes.length) throw new Error(`${file}: no sh:NodeShape. A profile without entities is useless.`);
 
   const shapeList = shapes.map(shape => {
-    const targetClass = store.getQuads(shape, SH + 'targetClass', null)[0]?.object.value || null;
-    const label = store.getQuads(shape, 'http://www.w3.org/2000/01/rdf-schema#label', null)[0]?.object.value || null;
+    const targetClass = store.getQuads(shape, SH + 'targetClass', null)[0]?.object.value;
+    if (!targetClass) throw new Error(`${file}: <${shape.value}> has no sh:targetClass.`);
+    const label = store.getQuads(shape, 'http://www.w3.org/2000/01/rdf-schema#label', null)[0]?.object.value;
+    if (!label) throw new Error(`${file}: <${shape.value}> has no rdfs:label.`);
     const fields = store.getQuads(shape, SH + 'property', null).map(q => parseField(store, q.object));
+    for (const f of fields) {
+      if (!f.path) {
+        throw new Error(`${file}: field "${f.name}" of "${label}" has no sh:path: a predicate or [ sh:inversePath <predicate> ].`);
+      }
+      if (!f.datatype && !f.class && !f.nodes.length) {
+        throw new Error(`${file}: field <${f.path}> of "${label}" has no sh:datatype, sh:class or sh:node.`);
+      }
+    }
     const discriminators = parseDiscriminators(store, shape);
     return { uri: shape.value, targetClass, label, fields, discriminators };
   });

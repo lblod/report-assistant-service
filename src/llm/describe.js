@@ -33,19 +33,18 @@ The time is required: T00:00:00 starts a day, T23:59:59 ends it.
 (the xsd prefix above is not copied: add @prefix xsd: <http://www.w3.org/2001/XMLSchema#>).
 `];
   for (const shape of profile.shapes) {
-    lines.push(`${shape.label || shape.targetClass} — sh:targetClass <${shape.targetClass}> ; rep:entity <${shape.uri}>`);
+    lines.push(`${shape.label} — sh:targetClass <${shape.targetClass}> ; rep:entity <${shape.uri}>`);
     for (const f of shape.fields) {
-      let kind = '?';
+      let kind;
       if (f.datatype) kind = formatDatatype(f.datatype);
       else if (f.class) kind = `→ ${formatConceptLabel(f.class, await fetchCodeList(f.class))}`;
-      else if (f.nodes.length) {
+      else {
         const links = [];
         for (const n of f.nodes) links.push(await formatLinkedLabel(profile, n));
         kind = `→ ${links.join(' or ')}`;
       }
       const dir = f.inverse ? ' (inverse)' : '';
-      const pathShown = f.path || '?';
-      lines.push(`  ${f.name || pathShown}  sh:path <${pathShown}>${dir}  ${kind}`);
+      lines.push(`  ${f.name || f.path}  sh:path <${f.path}>${dir}  ${kind}`);
     }
     lines.push('');
   }
@@ -69,11 +68,10 @@ function formatConceptLabel(type, { values, more }) {
 async function formatLinkedLabel(profile, nodeUri) {
   const s = profile.shapes.find(x => x.uri === nodeUri);
   if (!s) return shortenUri(nodeUri);
-  const name = s.label || s.targetClass;
   const { values, more } = await fetchCodeList(s.targetClass);
-  if (!values.length) return `${name} (not readable)`;
-  if (more) return `${name} (many)`;
-  return `${name} — ${values.length} values: ${formatValues(values)}`;
+  if (!values.length) return `${s.label} (not readable)`;
+  if (more) return `${s.label} (many)`;
+  return `${s.label} — ${values.length} values: ${formatValues(values)}`;
 }
 
 // "label <uri>" per value, comma separated.

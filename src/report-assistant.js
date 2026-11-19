@@ -44,7 +44,7 @@ export async function refineSpec(turns, profiles, conversationUri) {
 
 // A spec file read, parsed and checked against the profiles as they are
 // now. Returns { spec }, or { error } with one sentence saying why it cannot
-// run. The chat and the spec tab both go through here.
+// run.
 export async function prepareSpec(fileUri, profiles) {
   const content = await readSpecFile(fileUri);
   if (!content) return { error: 'this report spec has no spec file' };
@@ -60,20 +60,15 @@ export async function prepareSpec(fileUri, profiles) {
 
 // Runs a saved spec again as the user, outside the chat, and records a new
 // report that conforms to the same ReportSpec. No LLM: the new report keeps
-// the ReportSpec's description. Throws when the run fails.
+// the ReportSpec's description. The CSV goes to the share and is registered
+// as a result file, named after the spec's title so it downloads under a
+// readable name. The share name is unique, so a second run never overwrites
+// the first. Throws when the run fails.
 export async function runSavedSpec(spec, reportSpec, profiles) {
-  const csvFile = await runSpec(spec, profiles);
-  await registerReport(spec.title, csvFile, reportSpec.description, reportSpec.uri);
-}
-
-// Runs a spec as the user, writes the CSV to the share and registers it as a
-// result file, named after the spec's title so it downloads under a readable
-// name. Returns the logical file uri. The share name is unique, so a second
-// run never overwrites the first.
-async function runSpec(spec, profiles) {
   const shareName = `${uuid()}.csv`;
   writeShareFile(shareName, await runReport(spec, profiles.get(spec.profileUri)));
-  return registerFile(shareName, 'text/csv', RESULT_TYPE, `${slugify(spec.title)}.csv`);
+  const csvFile = await registerFile(shareName, 'text/csv', RESULT_TYPE, `${slugify(spec.title)}.csv`);
+  await registerReport(spec.title, csvFile, reportSpec.description, reportSpec.uri);
 }
 
 // A file name from a title. Falls back to "report".

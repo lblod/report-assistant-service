@@ -22,7 +22,8 @@ function queryPublic(q) {
 // instances: the query asks one row extra to know that. No ORDER BY in the
 // query: the menu asks this for every linked entity, and sorting a class of
 // thousands to show nothing would cost the most; the few rows are sorted
-// here. Empty when the read fails; the LLM then uses rep:anyOf with words.
+// here. Empty when the read fails; the menu then shows "(not readable)"
+// and the LLM matches the name text with sh:pattern.
 export async function fetchCodeList(type) {
   let values = [];
   let more = false;

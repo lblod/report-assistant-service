@@ -144,7 +144,10 @@ We add a small profile and run one report on it.
    The profile names itself (`owl:Ontology` and `dct:title`) and has two
    entities. A bestuurseenheid has a name and a link to its soort bestuur.
 
-2. Restart the service. It reads the profiles at boot.
+2. Restart the service. It reads the profiles at boot. It does not start
+   when a profile has no `dct:title`, an entity has no `sh:targetClass` or
+   `rdfs:label`, or a field has no `sh:path` or no `sh:datatype`, `sh:class`
+   or `sh:node`.
 
    ```sh
    docker compose restart report-assistant

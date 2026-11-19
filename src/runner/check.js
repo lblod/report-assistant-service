@@ -46,13 +46,13 @@ function checkStartEntity(spec, profile) {
   if (!matches.length) {
     return `"${profile.title}" cannot list <${spec.targetClass}>. It has: ${listShapes(profile)}.`;
   }
-  const names = matches.map(m => `${m.label || m.uri} <${m.uri}>`).join(', ');
+  const names = matches.map(m => `${m.label} <${m.uri}>`).join(', ');
   return `<${spec.targetClass}> is the class of ${matches.length} entities: ${names}. Add rep:entity <...> to say which one.`;
 }
 
 // The entity names of a profile, for error messages.
 function listShapes(profile) {
-  return profile.shapes.map(s => s.label || s.targetClass).join(', ');
+  return profile.shapes.map(s => s.label).join(', ');
 }
 
 // Every condition in the spec: the filters, and the rep:where conditions on
